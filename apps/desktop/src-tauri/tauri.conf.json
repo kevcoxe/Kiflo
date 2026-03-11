@@ -26,6 +26,9 @@
     }
   },
   "bundle": {
-    "active": false
+    "active": true,
+    "macOS": {
+      "infoPlist": "./Info.plist"
+    }
   }
 }

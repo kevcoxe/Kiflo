@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
     pub hotkey: String,
-    pub api_base_url: String,
     pub auto_paste: bool,
     pub pause_background_audio: bool,
     pub recording_cue_volume: i64,
@@ -18,7 +17,6 @@ impl Default for Settings {
     fn default() -> Self {
         Self {
             hotkey: "Option+Space".to_string(),
-            api_base_url: "http://127.0.0.1:8000".to_string(),
             auto_paste: true,
             pause_background_audio: true,
             recording_cue_volume: 75,
@@ -73,4 +71,37 @@ pub struct RecordedAudio {
     pub audio_base64: String,
     pub duration_ms: u32,
     pub sample_rate: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum DictationMode {
+    Default,
+    Email,
+    Chat,
+    Notes,
+    BulletList,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscriptionResponse {
+    pub raw_text: String,
+    pub language: String,
+    pub duration_ms: i64,
+    pub provider: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CleanupResponse {
+    pub clean_text: String,
+    pub provider: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ModelStatus {
+    pub installed: bool,
+    pub downloading: bool,
+    pub progress: Option<f64>,
+    pub error: Option<String>,
 }

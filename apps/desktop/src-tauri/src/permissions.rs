@@ -33,7 +33,9 @@ pub fn set_clipboard_text(text: String) -> Result<(), String> {
 pub fn restore_clipboard(snapshot: ClipboardSnapshot) -> Result<(), String> {
     if let Some(text) = snapshot.text {
         let mut clipboard = Clipboard::new().map_err(|error| error.to_string())?;
-        clipboard.set_text(text).map_err(|error| error.to_string())?;
+        clipboard
+            .set_text(text)
+            .map_err(|error| error.to_string())?;
     }
     Ok(())
 }
@@ -82,10 +84,24 @@ pub fn frontmost_app() -> Result<Option<String>, String> {
 }
 
 fn microphone_status() -> String {
-    if cpal::default_host().default_input_device().is_some() {
-        "granted".to_string()
-    } else {
-        "unknown".to_string()
+    #[cfg(target_os = "macos")]
+    {
+        // A default input device existing does not mean this app has TCC permission.
+        // Until we wire a real AVFoundation permission check, keep this conservative.
+        if cpal::default_host().default_input_device().is_some() {
+            "unknown".to_string()
+        } else {
+            "denied".to_string()
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        if cpal::default_host().default_input_device().is_some() {
+            "granted".to_string()
+        } else {
+            "unknown".to_string()
+        }
     }
 }
 

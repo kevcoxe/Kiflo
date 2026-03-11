@@ -27,7 +27,6 @@ export type PermissionState = "granted" | "denied" | "unknown";
 
 export interface Settings {
   hotkey: string;
-  apiBaseUrl: string;
   autoPaste: boolean;
   pauseBackgroundAudio: boolean;
   recordingCueVolume: number;
@@ -64,16 +63,16 @@ export interface TranscriptionResponse {
   provider: string;
 }
 
-export interface CleanupRequest {
-  raw_text: string;
-  mode: DictationMode;
-  app_name?: string | null;
-  preserve_raw?: boolean;
-}
-
 export interface CleanupResponse {
   clean_text: string;
   provider: string;
+}
+
+export interface ModelStatus {
+  installed: boolean;
+  downloading: boolean;
+  progress?: number | null;
+  error?: string | null;
 }
 
 export interface PermissionStatus {

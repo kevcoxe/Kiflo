@@ -5,7 +5,6 @@ import * as recordingCues from "@/lib/recording-cues";
 
 const defaultSettings = {
   hotkey: "Option+Space",
-  apiBaseUrl: "http://127.0.0.1:8000",
   autoPaste: true,
   pauseBackgroundAudio: true,
   recordingCueVolume: 75,
@@ -20,9 +19,18 @@ const defaultPermissions = {
   accessibility: "granted" as const,
 };
 
+const defaultModelStatus = {
+  installed: true,
+  downloading: false,
+  progress: null,
+  error: null,
+};
+
 function mockSuccessfulBootstrap() {
   vi.spyOn(desktop, "getSettings").mockResolvedValue(defaultSettings);
   vi.spyOn(desktop, "getPermissionStatus").mockResolvedValue(defaultPermissions);
+  vi.spyOn(desktop, "getModelStatus").mockResolvedValue(defaultModelStatus);
+  vi.spyOn(desktop, "downloadModel").mockResolvedValue(undefined);
   vi.spyOn(desktop, "listHistory").mockResolvedValue([]);
   vi.spyOn(desktop, "updateSettings").mockImplementation(async (settings) => settings);
   vi.spyOn(desktop, "registerGlobalShortcut").mockResolvedValue(undefined);
@@ -42,6 +50,16 @@ function mockSuccessfulBootstrap() {
   vi.spyOn(desktop, "setClipboardText").mockResolvedValue(undefined);
   vi.spyOn(desktop, "restoreClipboard").mockResolvedValue(undefined);
   vi.spyOn(desktop, "simulatePaste").mockResolvedValue(undefined);
+  vi.spyOn(desktop, "transcribeAudio").mockResolvedValue({
+    raw_text: "hey can you send the update tomorrow",
+    language: "en",
+    duration_ms: 450,
+    provider: "mock",
+  });
+  vi.spyOn(desktop, "cleanupText").mockResolvedValue({
+    clean_text: "Hey, can you send the update tomorrow?",
+    provider: "mock",
+  });
   vi.spyOn(desktop, "createHistoryRecord").mockImplementation(async (record) => ({
     id: "history-1",
     createdAt: "2026-03-11T00:00:00Z",
@@ -63,32 +81,6 @@ describe("App", () => {
   });
 
   it("moves from idle to recording and back through processing", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              raw_text: "hey can you send the update tomorrow",
-              language: "en",
-              duration_ms: 450,
-              provider: "mock",
-            }),
-            { status: 200 },
-          ),
-        )
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              clean_text: "Hey, can you send the update tomorrow?",
-              provider: "mock",
-            }),
-            { status: 200 },
-          ),
-        ),
-    );
-
     render(<App />);
 
     const holdButton = await screen.findByRole("button", {
@@ -113,10 +105,7 @@ describe("App", () => {
   });
 
   it("shows an error banner when the API call fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response("upstream failed", { status: 500 })),
-    );
+    vi.spyOn(desktop, "transcribeAudio").mockRejectedValue(new Error("upstream failed"));
 
     render(<App />);
 
@@ -127,32 +116,38 @@ describe("App", () => {
     expect(await screen.findByText("upstream failed")).toBeVisible();
   });
 
+  it("shows an error banner when transcription returns empty text", async () => {
+    vi.spyOn(desktop, "transcribeAudio").mockResolvedValue({
+      raw_text: "   ",
+      language: "en",
+      duration_ms: 450,
+      provider: "mock",
+    });
+
+    render(<App />);
+
+    const holdButton = await screen.findByRole("button", { name: "Hold to Record" });
+    fireEvent.mouseDown(holdButton);
+    fireEvent.mouseUp(await screen.findByRole("button", { name: "Release to Transcribe" }));
+
+    expect(
+      await screen.findByText(
+        "No speech was detected in the recording. Try speaking louder or checking the selected microphone.",
+      ),
+    ).toBeVisible();
+  });
+
   it("opens the fallback panel when paste fails", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              raw_text: "running five minutes late be there soon",
-              language: "en",
-              duration_ms: 450,
-              provider: "mock",
-            }),
-            { status: 200 },
-          ),
-        )
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              clean_text: "Running five minutes late. Be there soon.",
-              provider: "mock",
-            }),
-            { status: 200 },
-          ),
-        ),
-    );
+    vi.spyOn(desktop, "transcribeAudio").mockResolvedValue({
+      raw_text: "running five minutes late be there soon",
+      language: "en",
+      duration_ms: 450,
+      provider: "mock",
+    });
+    vi.spyOn(desktop, "cleanupText").mockResolvedValue({
+      clean_text: "Running five minutes late. Be there soon.",
+      provider: "mock",
+    });
     vi.spyOn(desktop, "simulatePaste").mockRejectedValue(new Error("Accessibility denied"));
 
     render(<App />);
@@ -169,8 +164,6 @@ describe("App", () => {
   });
 
   it("subscribes to native tray events once the app boots", async () => {
-    vi.stubGlobal("fetch", vi.fn());
-
     render(<App />);
 
     await waitFor(() => {
@@ -179,8 +172,6 @@ describe("App", () => {
   });
 
   it("lets users disable background audio pausing", async () => {
-    vi.stubGlobal("fetch", vi.fn());
-
     render(<App />);
 
     const checkbox = await screen.findByLabelText(
@@ -202,8 +193,6 @@ describe("App", () => {
   });
 
   it("persists recording cue volume changes from the settings slider", async () => {
-    vi.stubGlobal("fetch", vi.fn());
-
     render(<App />);
 
     const slider = await screen.findByLabelText("Recording cue volume (75%)");
@@ -221,31 +210,16 @@ describe("App", () => {
       ...defaultSettings,
       interactionMode: "toggle",
     });
-    vi.stubGlobal(
-      "fetch",
-      vi
-        .fn()
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              raw_text: "follow up tomorrow morning",
-              language: "en",
-              duration_ms: 450,
-              provider: "mock",
-            }),
-            { status: 200 },
-          ),
-        )
-        .mockResolvedValueOnce(
-          new Response(
-            JSON.stringify({
-              clean_text: "Follow up tomorrow morning.",
-              provider: "mock",
-            }),
-            { status: 200 },
-          ),
-        ),
-    );
+    vi.spyOn(desktop, "transcribeAudio").mockResolvedValue({
+      raw_text: "follow up tomorrow morning",
+      language: "en",
+      duration_ms: 450,
+      provider: "mock",
+    });
+    vi.spyOn(desktop, "cleanupText").mockResolvedValue({
+      clean_text: "Follow up tomorrow morning.",
+      provider: "mock",
+    });
 
     render(<App />);
 
@@ -257,6 +231,24 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(screen.getByText("Inserted")).toBeVisible();
+    });
+  });
+
+  it("offers a model download action when the local model is missing", async () => {
+    vi.spyOn(desktop, "getModelStatus").mockResolvedValue({
+      installed: false,
+      downloading: false,
+      progress: null,
+      error: null,
+    });
+
+    render(<App />);
+
+    const button = await screen.findByRole("button", { name: "Download Model" });
+    fireEvent.click(button);
+
+    await waitFor(() => {
+      expect(desktop.downloadModel).toHaveBeenCalledTimes(1);
     });
   });
 });

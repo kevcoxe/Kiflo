@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod db;
+mod dictation;
 mod media;
 mod models;
 mod permissions;
@@ -9,7 +10,8 @@ mod recording;
 use std::{fs, path::PathBuf, sync::Mutex};
 
 use models::{
-    ClipboardSnapshot, HistoryRecord, NewHistoryRecord, PermissionStatus, RecordedAudio, Settings,
+    CleanupResponse, ClipboardSnapshot, DictationMode, HistoryRecord, ModelStatus,
+    NewHistoryRecord, PermissionStatus, RecordedAudio, Settings, TranscriptionResponse,
 };
 use tauri::{
     menu::{Menu, MenuItem},
@@ -24,14 +26,18 @@ const TRAY_TOGGLE_RECORDING_EVENT: &str = "tray-toggle-recording";
 
 struct AppState {
     database_path: PathBuf,
+    app_data_dir: PathBuf,
     recording: Mutex<Option<recording::RecordingHandle>>,
+    model_runtime: Mutex<dictation::ModelRuntimeState>,
 }
 
 impl AppState {
-    fn new(database_path: PathBuf) -> Self {
+    fn new(database_path: PathBuf, app_data_dir: PathBuf) -> Self {
         Self {
             database_path,
+            app_data_dir,
             recording: Mutex::new(None),
+            model_runtime: Mutex::new(dictation::ModelRuntimeState::default()),
         }
     }
 }
@@ -81,6 +87,52 @@ fn start_recording(
 #[tauri::command]
 fn stop_recording(state: State<'_, AppState>) -> Result<RecordedAudio, String> {
     recording::stop_recording(&state.inner().recording)
+}
+
+#[tauri::command]
+fn transcribe_audio(
+    state: State<'_, AppState>,
+    audio_base64: String,
+    mode: DictationMode,
+    app_name: Option<String>,
+) -> Result<TranscriptionResponse, String> {
+    dictation::transcribe_audio(
+        state.inner().app_data_dir.as_path(),
+        &audio_base64,
+        mode,
+        app_name,
+    )
+}
+
+#[tauri::command]
+fn cleanup_text(
+    raw_text: String,
+    mode: DictationMode,
+    app_name: Option<String>,
+    preserve_raw: Option<bool>,
+) -> Result<CleanupResponse, String> {
+    let _ = app_name;
+    Ok(dictation::cleanup_text(
+        &raw_text,
+        mode,
+        preserve_raw.unwrap_or(false),
+    ))
+}
+
+#[tauri::command]
+fn get_model_status(state: State<'_, AppState>) -> Result<ModelStatus, String> {
+    dictation::get_model_status(
+        state.inner().app_data_dir.as_path(),
+        &state.inner().model_runtime,
+    )
+}
+
+#[tauri::command]
+fn download_model(state: State<'_, AppState>) -> Result<(), String> {
+    dictation::download_model(
+        state.inner().app_data_dir.as_path(),
+        &state.inner().model_runtime,
+    )
 }
 
 #[tauri::command]
@@ -179,7 +231,7 @@ fn main() {
             fs::create_dir_all(&app_data_dir)?;
             let database_path = app_data_dir.join("tator.sqlite3");
             db::initialize(&database_path).map_err(std::io::Error::other)?;
-            app.manage(AppState::new(database_path));
+            app.manage(AppState::new(database_path, app_data_dir));
             create_tray(&app.handle()).map_err(std::io::Error::other)?;
             Ok(())
         })
@@ -191,6 +243,10 @@ fn main() {
             get_permission_status,
             start_recording,
             stop_recording,
+            transcribe_audio,
+            cleanup_text,
+            get_model_status,
+            download_model,
             get_frontmost_app,
             capture_clipboard,
             set_clipboard_text,
