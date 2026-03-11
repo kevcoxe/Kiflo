@@ -1,8 +1,7 @@
 use std::{
-    env,
-    ffi::OsString,
-    fs,
+    env, fs,
     io::Cursor,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::Command,
     sync::Mutex,
@@ -55,10 +54,18 @@ struct HelperTranscriptionResponse {
 struct HelperRunner {
     program: String,
     base_args: Vec<String>,
+    env_vars: Vec<(String, String)>,
+}
+
+struct BundledPythonRuntime {
+    executable: PathBuf,
+    python_home: PathBuf,
+    site_packages: PathBuf,
 }
 
 pub fn transcribe_audio(
     app_data_dir: &Path,
+    resource_dir: Option<&Path>,
     audio_base64: &str,
     mode: DictationMode,
     app_name: Option<String>,
@@ -70,7 +77,9 @@ pub fn transcribe_audio(
 
     match selected_provider() {
         AsrProviderKind::Mock => Ok(mock_transcription(mode, app_name, duration_ms)),
-        AsrProviderKind::MlxWhisper => transcribe_with_helper(app_data_dir, &audio, duration_ms),
+        AsrProviderKind::MlxWhisper => {
+            transcribe_with_helper(app_data_dir, resource_dir, &audio, duration_ms)
+        }
     }
 }
 
@@ -90,6 +99,7 @@ pub fn cleanup_text(raw_text: &str, mode: DictationMode, preserve_raw: bool) -> 
 
 pub fn get_model_status(
     app_data_dir: &Path,
+    resource_dir: Option<&Path>,
     runtime: &Mutex<ModelRuntimeState>,
 ) -> Result<ModelStatus, String> {
     let state = runtime
@@ -105,11 +115,8 @@ pub fn get_model_status(
     }
 
     let install_error = ensure_model_installed(app_data_dir).err();
-    let error = state
-        .last_error
-        .clone()
-        .or_else(ffmpeg_availability_error)
-        .or(install_error);
+    let runtime_error = helper_runtime_availability_error(app_data_dir, resource_dir);
+    let error = state.last_error.clone().or(runtime_error).or(install_error);
 
     Ok(ModelStatus {
         installed: model_is_installed(app_data_dir),
@@ -121,10 +128,15 @@ pub fn get_model_status(
 
 pub fn download_model(
     app_data_dir: &Path,
+    resource_dir: Option<&Path>,
     runtime: &Mutex<ModelRuntimeState>,
 ) -> Result<(), String> {
     if selected_provider() == AsrProviderKind::Mock {
         return Ok(());
+    }
+
+    if let Some(error) = helper_runtime_availability_error(app_data_dir, resource_dir) {
+        return Err(error);
     }
 
     {
@@ -148,17 +160,19 @@ pub fn download_model(
 
 fn transcribe_with_helper(
     app_data_dir: &Path,
+    resource_dir: Option<&Path>,
     audio: &[u8],
     duration_ms: i64,
 ) -> Result<TranscriptionResponse, String> {
     let model_dir = ensure_model_installed(app_data_dir)?;
     let helper_script = ensure_helper_script(app_data_dir)?;
-    let runner = resolve_helper_runner(app_data_dir, &helper_script);
+    let runner = resolve_helper_runner(app_data_dir, resource_dir, &helper_script)?;
     let temp_audio_path = env::temp_dir().join(format!("tator-audio-{}.wav", Uuid::new_v4()));
     fs::write(&temp_audio_path, audio)
         .map_err(|error| format!("Unable to write temporary audio: {error}"))?;
 
-    let output = Command::new(&runner.program)
+    let mut command = Command::new(&runner.program);
+    command
         .args(&runner.base_args)
         .arg("transcribe")
         .arg("--audio-path")
@@ -166,9 +180,12 @@ fn transcribe_with_helper(
         .arg("--model-path")
         .arg(&model_dir)
         .arg("--language")
-        .arg(MODEL_LANGUAGE)
-        .env("PATH", helper_path_env())
-        .output();
+        .arg(MODEL_LANGUAGE);
+    for (key, value) in &runner.env_vars {
+        command.env(key, value);
+    }
+
+    let output = command.output();
 
     let _ = fs::remove_file(&temp_audio_path);
 
@@ -506,12 +523,17 @@ fn ensure_helper_script(app_data_dir: &Path) -> Result<PathBuf, String> {
     Ok(script_path)
 }
 
-fn resolve_helper_runner(app_data_dir: &Path, helper_script: &Path) -> HelperRunner {
+fn resolve_helper_runner(
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+    helper_script: &Path,
+) -> Result<HelperRunner, String> {
     if let Ok(executable) = env::var("TATOR_MLX_HELPER_EXECUTABLE") {
-        return HelperRunner {
+        return Ok(HelperRunner {
             program: executable,
             base_args: Vec::new(),
-        };
+            env_vars: Vec::new(),
+        });
     }
 
     let bundled_helper = app_data_dir
@@ -519,36 +541,77 @@ fn resolve_helper_runner(app_data_dir: &Path, helper_script: &Path) -> HelperRun
         .join("bin")
         .join("tator-mlx-helper");
     if bundled_helper.exists() {
-        return HelperRunner {
+        return Ok(HelperRunner {
             program: bundled_helper.to_string_lossy().into_owned(),
             base_args: Vec::new(),
-        };
+            env_vars: Vec::new(),
+        });
+    }
+
+    if let Some(runtime) = ensure_bundled_python_runtime(app_data_dir, resource_dir)? {
+        return Ok(HelperRunner {
+            program: runtime.executable.to_string_lossy().into_owned(),
+            base_args: vec![helper_script.to_string_lossy().into_owned()],
+            env_vars: vec![
+                (
+                    "PYTHONHOME".to_string(),
+                    runtime.python_home.to_string_lossy().into_owned(),
+                ),
+                (
+                    "PYTHONPATH".to_string(),
+                    runtime.site_packages.to_string_lossy().into_owned(),
+                ),
+                ("PYTHONDONTWRITEBYTECODE".to_string(), "1".to_string()),
+                ("PYTHONNOUSERSITE".to_string(), "1".to_string()),
+            ],
+        });
     }
 
     if let Ok(executable) = env::var("TATOR_PYTHON_EXECUTABLE") {
-        return HelperRunner {
+        return Ok(HelperRunner {
             program: executable,
             base_args: vec![helper_script.to_string_lossy().into_owned()],
-        };
+            env_vars: Vec::new(),
+        });
     }
 
     let dev_python = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../api/.venv/bin/python");
     if dev_python.exists() {
-        return HelperRunner {
+        return Ok(HelperRunner {
             program: dev_python.to_string_lossy().into_owned(),
             base_args: vec![helper_script.to_string_lossy().into_owned()],
-        };
+            env_vars: Vec::new(),
+        });
     }
 
-    HelperRunner {
+    Ok(HelperRunner {
         program: "python3".to_string(),
         base_args: vec![helper_script.to_string_lossy().into_owned()],
-    }
+        env_vars: Vec::new(),
+    })
 }
 
 fn helper_error_message(stderr: &[u8], stdout: &[u8]) -> String {
     let stderr = String::from_utf8_lossy(stderr).trim().to_string();
     let stdout = String::from_utf8_lossy(stdout).trim().to_string();
+    let combined = if !stderr.is_empty() {
+        stderr.clone()
+    } else {
+        stdout.clone()
+    };
+
+    if combined.contains("No module named 'mlx_whisper'")
+        || combined.contains("No module named \"mlx_whisper\"")
+    {
+        return "The Python runtime used for local transcription does not have `mlx_whisper` installed. Run `uv sync --project apps/api --extra dev`, then relaunch with `TATOR_PYTHON_EXECUTABLE=/absolute/path/to/apps/api/.venv/bin/python` if the app does not auto-detect that environment.".to_string();
+    }
+
+    if combined.contains("No module named 'huggingface_hub'")
+        || combined.contains("No module named \"huggingface_hub\"")
+    {
+        return "The Python runtime used for local transcription is missing `huggingface_hub`. Recreate the helper environment with `uv sync --project apps/api --extra dev`, then point `TATOR_PYTHON_EXECUTABLE` at `apps/api/.venv/bin/python`.".to_string();
+    }
+
     if !stderr.is_empty() {
         stderr
     } else if !stdout.is_empty() {
@@ -558,55 +621,170 @@ fn helper_error_message(stderr: &[u8], stdout: &[u8]) -> String {
     }
 }
 
-fn helper_path_env() -> OsString {
-    let mut paths = env::split_paths(&env::var_os("PATH").unwrap_or_default()).collect::<Vec<_>>();
-
-    for directory in ffmpeg_search_directories() {
-        if !paths.iter().any(|existing| existing == &directory) {
-            paths.push(directory);
-        }
+fn helper_runtime_availability_error(
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+) -> Option<String> {
+    if env::var("TATOR_MLX_HELPER_EXECUTABLE").is_ok()
+        || env::var("TATOR_PYTHON_EXECUTABLE").is_ok()
+    {
+        return None;
     }
 
-    env::join_paths(paths).unwrap_or_else(|_| env::var_os("PATH").unwrap_or_default())
+    let bundled_helper = app_data_dir
+        .join("runtime")
+        .join("bin")
+        .join("tator-mlx-helper");
+    if bundled_helper.exists() {
+        return None;
+    }
+
+    if bundled_runtime_is_installed(app_data_dir) {
+        return None;
+    }
+
+    if resource_dir
+        .map(resource_runtime_dir)
+        .is_some_and(|path| bundled_runtime_source_ready(&path))
+    {
+        return None;
+    }
+
+    let dev_python = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../api/.venv/bin/python");
+    if dev_python.exists() {
+        return None;
+    }
+
+    Some(
+        "This build does not include the packaged MLX runtime. Rebuild with `npm run prepare:mlx-runtime` before `tauri build`, or set `TATOR_PYTHON_EXECUTABLE` to a Python 3.12 environment that has `mlx_whisper` installed.".to_string(),
+    )
 }
 
-fn ffmpeg_availability_error() -> Option<String> {
-    if resolve_ffmpeg_path().is_some() {
-        None
-    } else {
-        Some(
-            "ffmpeg is not available to the packaged app. Install it with Homebrew or bundle it into the app runtime."
-                .to_string(),
+fn ensure_bundled_python_runtime(
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+) -> Result<Option<BundledPythonRuntime>, String> {
+    let install_dir = bundled_runtime_install_dir(app_data_dir);
+    let source_dir = resource_dir
+        .map(resource_runtime_dir)
+        .filter(|path| bundled_runtime_source_ready(path));
+
+    if bundled_runtime_target_ready(&install_dir)
+        && !source_dir
+            .as_ref()
+            .is_some_and(|source| bundled_runtime_manifest_changed(&install_dir, source))
+    {
+        return Ok(Some(bundled_runtime_from_install_dir(install_dir)));
+    }
+
+    let Some(source_dir) = source_dir else {
+        return Ok(None);
+    };
+
+    if install_dir.exists() {
+        fs::remove_dir_all(&install_dir).map_err(|error| {
+            format!(
+                "Unable to replace the packaged MLX runtime at `{}`: {error}",
+                install_dir.display()
+            )
+        })?;
+    }
+
+    copy_directory_recursive(&source_dir, &install_dir)?;
+    ensure_executable(
+        &install_dir
+            .join("python-home")
+            .join("bin")
+            .join("python3.12"),
+    )?;
+
+    Ok(Some(bundled_runtime_from_install_dir(install_dir)))
+}
+
+fn resource_runtime_dir(resource_dir: &Path) -> PathBuf {
+    resource_dir.join("runtime")
+}
+
+fn bundled_runtime_install_dir(app_data_dir: &Path) -> PathBuf {
+    app_data_dir.join("runtime").join("bundled-python")
+}
+
+fn bundled_runtime_manifest_path(root: &Path) -> PathBuf {
+    root.join("manifest.json")
+}
+
+fn bundled_runtime_source_ready(root: &Path) -> bool {
+    bundled_runtime_manifest_path(root).is_file()
+        && root
+            .join("python-home")
+            .join("bin")
+            .join("python3.12")
+            .is_file()
+        && root.join("site-packages").join("mlx_whisper").is_dir()
+}
+
+fn bundled_runtime_target_ready(root: &Path) -> bool {
+    bundled_runtime_source_ready(root)
+}
+
+fn bundled_runtime_is_installed(app_data_dir: &Path) -> bool {
+    bundled_runtime_target_ready(&bundled_runtime_install_dir(app_data_dir))
+}
+
+fn bundled_runtime_from_install_dir(root: PathBuf) -> BundledPythonRuntime {
+    BundledPythonRuntime {
+        executable: root.join("python-home").join("bin").join("python3.12"),
+        python_home: root.join("python-home"),
+        site_packages: root.join("site-packages"),
+    }
+}
+
+fn bundled_runtime_manifest_changed(installed_root: &Path, source_root: &Path) -> bool {
+    fs::read(bundled_runtime_manifest_path(installed_root)).ok()
+        != fs::read(bundled_runtime_manifest_path(source_root)).ok()
+}
+
+fn copy_directory_recursive(source: &Path, destination: &Path) -> Result<(), String> {
+    fs::create_dir_all(destination).map_err(|error| {
+        format!(
+            "Unable to create runtime directory `{}`: {error}",
+            destination.display()
         )
-    }
-}
+    })?;
 
-fn resolve_ffmpeg_path() -> Option<PathBuf> {
-    if let Ok(explicit) = env::var("TATOR_FFMPEG_EXECUTABLE") {
-        let path = PathBuf::from(explicit);
-        if path.exists() {
-            return Some(path);
+    for entry in fs::read_dir(source).map_err(|error| {
+        format!(
+            "Unable to read bundled runtime directory `{}`: {error}",
+            source.display()
+        )
+    })? {
+        let entry = entry.map_err(|error| error.to_string())?;
+        let file_type = entry.file_type().map_err(|error| error.to_string())?;
+        let source_path = entry.path();
+        let destination_path = destination.join(entry.file_name());
+
+        if file_type.is_dir() {
+            copy_directory_recursive(&source_path, &destination_path)?;
+        } else {
+            fs::copy(&source_path, &destination_path).map_err(|error| {
+                format!(
+                    "Unable to copy bundled runtime asset `{}`: {error}",
+                    source_path.display()
+                )
+            })?;
         }
     }
 
-    for directory in ffmpeg_search_directories() {
-        let candidate = directory.join("ffmpeg");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-
-    None
+    Ok(())
 }
 
-fn ffmpeg_search_directories() -> Vec<PathBuf> {
-    let mut directories = vec![
-        PathBuf::from("/opt/homebrew/bin"),
-        PathBuf::from("/usr/local/bin"),
-        PathBuf::from("/opt/local/bin"),
-    ];
-    directories.extend(env::split_paths(&env::var_os("PATH").unwrap_or_default()));
-    directories
+fn ensure_executable(path: &Path) -> Result<(), String> {
+    let mut permissions = fs::metadata(path)
+        .map_err(|error| format!("Unable to inspect `{}`: {error}", path.display()))?
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(path, permissions)
+        .map_err(|error| format!("Unable to mark `{}` as executable: {error}", path.display()))
 }
 
 #[cfg(test)]
@@ -662,9 +840,18 @@ mod tests {
     fn mock_status_reports_ready() {
         let runtime = Mutex::new(ModelRuntimeState::default());
         env::set_var("TATOR_INTERNAL_ASR_PROVIDER", "mock");
-        let status = get_model_status(Path::new("/tmp"), &runtime).unwrap();
+        let status = get_model_status(Path::new("/tmp"), None, &runtime).unwrap();
         env::remove_var("TATOR_INTERNAL_ASR_PROVIDER");
         assert!(status.installed);
         assert!(!status.downloading);
+    }
+
+    #[test]
+    fn helper_error_message_maps_missing_mlx_whisper_to_setup_instructions() {
+        let message =
+            helper_error_message(b"ModuleNotFoundError: No module named 'mlx_whisper'", b"");
+        assert!(message.contains("does not have `mlx_whisper` installed"));
+        assert!(message.contains("uv sync --project apps/api --extra dev"));
+        assert!(message.contains("TATOR_PYTHON_EXECUTABLE"));
     }
 }

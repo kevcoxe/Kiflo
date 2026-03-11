@@ -22,11 +22,17 @@ jobs:
           node-version: 23
           cache: npm
 
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install JavaScript dependencies
         run: npm ci
+
+      - name: Install bundled MLX helper runtime
+        run: uv sync --project apps/api --extra dev
 
       - name: Build and publish Tauri release
         uses: tauri-apps/tauri-action@v0.6.0

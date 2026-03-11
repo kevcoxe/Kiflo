@@ -28,15 +28,17 @@ const TRAY_TOGGLE_RECORDING_EVENT: &str = "tray-toggle-recording";
 struct AppState {
     database_path: PathBuf,
     app_data_dir: PathBuf,
+    resource_dir: Option<PathBuf>,
     recording: Mutex<Option<recording::RecordingHandle>>,
     model_runtime: Mutex<dictation::ModelRuntimeState>,
 }
 
 impl AppState {
-    fn new(database_path: PathBuf, app_data_dir: PathBuf) -> Self {
+    fn new(database_path: PathBuf, app_data_dir: PathBuf, resource_dir: Option<PathBuf>) -> Self {
         Self {
             database_path,
             app_data_dir,
+            resource_dir,
             recording: Mutex::new(None),
             model_runtime: Mutex::new(dictation::ModelRuntimeState::default()),
         }
@@ -99,6 +101,7 @@ fn transcribe_audio(
 ) -> Result<TranscriptionResponse, String> {
     dictation::transcribe_audio(
         state.inner().app_data_dir.as_path(),
+        state.inner().resource_dir.as_deref(),
         &audio_base64,
         mode,
         app_name,
@@ -124,6 +127,7 @@ fn cleanup_text(
 fn get_model_status(state: State<'_, AppState>) -> Result<ModelStatus, String> {
     dictation::get_model_status(
         state.inner().app_data_dir.as_path(),
+        state.inner().resource_dir.as_deref(),
         &state.inner().model_runtime,
     )
 }
@@ -132,6 +136,7 @@ fn get_model_status(state: State<'_, AppState>) -> Result<ModelStatus, String> {
 fn download_model(state: State<'_, AppState>) -> Result<(), String> {
     dictation::download_model(
         state.inner().app_data_dir.as_path(),
+        state.inner().resource_dir.as_deref(),
         &state.inner().model_runtime,
     )
 }
@@ -248,10 +253,11 @@ fn main() {
         })
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
+            let resource_dir = app.path().resource_dir().ok();
             fs::create_dir_all(&app_data_dir)?;
             let database_path = app_data_dir.join("tator.sqlite3");
             db::initialize(&database_path).map_err(std::io::Error::other)?;
-            app.manage(AppState::new(database_path, app_data_dir));
+            app.manage(AppState::new(database_path, app_data_dir, resource_dir));
             create_tray(&app.handle()).map_err(std::io::Error::other)?;
             Ok(())
         })

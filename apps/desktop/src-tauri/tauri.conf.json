@@ -5,7 +5,7 @@
   "identifier": "dev.kevcoxe.tator",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "npm run prepare:mlx-runtime && npm run build",
     "devUrl": "http://127.0.0.1:1420",
     "frontendDist": "../dist"
   },
@@ -27,6 +27,9 @@
   },
   "bundle": {
     "active": true,
+    "resources": {
+      "target/bundled-runtime/": "runtime/"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

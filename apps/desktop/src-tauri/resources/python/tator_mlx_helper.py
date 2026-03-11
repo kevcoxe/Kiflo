@@ -1,8 +1,42 @@
 import argparse
+import audioop
 import importlib
 import json
 from pathlib import Path
 import sys
+import wave
+
+import numpy as np
+
+TARGET_SAMPLE_RATE = 16_000
+
+
+def load_waveform(audio_path: str) -> np.ndarray:
+    with wave.open(audio_path, "rb") as wav_file:
+        channels = wav_file.getnchannels()
+        sample_width = wav_file.getsampwidth()
+        sample_rate = wav_file.getframerate()
+        frames = wav_file.readframes(wav_file.getnframes())
+
+    if channels != 1:
+        raise RuntimeError(
+            f"Expected mono WAV input but received {channels} channels."
+        )
+
+    if sample_width not in (1, 2, 4):
+        raise RuntimeError(
+            f"Unsupported WAV sample width: {sample_width * 8} bits per sample."
+        )
+
+    if sample_width != 2:
+        frames = audioop.lin2lin(frames, sample_width, 2)
+
+    if sample_rate != TARGET_SAMPLE_RATE:
+        frames, _ = audioop.ratecv(
+            frames, 2, 1, sample_rate, TARGET_SAMPLE_RATE, None
+        )
+
+    return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
 
 def transcribe_audio(audio_path: str, model_path: str, language: str) -> None:
@@ -14,8 +48,9 @@ def transcribe_audio(audio_path: str, model_path: str, language: str) -> None:
         raise RuntimeError(f"Model is not installed at: {local_model}")
 
     mlx_whisper = importlib.import_module("mlx_whisper")
+    waveform = load_waveform(str(audio_file))
     result = mlx_whisper.transcribe(
-        str(audio_file),
+        waveform,
         path_or_hf_repo=str(local_model),
         language=language,
         verbose=False,
@@ -63,15 +98,6 @@ def main() -> int:
             transcribe_audio(args.audio_path, args.model_path, args.language)
         else:
             download_model(args.model_repo, args.model_path)
-    except FileNotFoundError as exc:
-        if exc.filename == "ffmpeg":
-            print(
-                "ffmpeg is required for local transcription but was not found in the app runtime PATH.",
-                file=sys.stderr,
-            )
-        else:
-            print(str(exc), file=sys.stderr)
-        return 1
     except Exception as exc:  # noqa: BLE001
         print(str(exc), file=sys.stderr)
         return 1
