@@ -1,4 +1,6 @@
+import { show } from "@tauri-apps/api/app";
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   register,
@@ -133,8 +135,21 @@ export async function unregisterAllGlobalShortcuts(): Promise<void> {
 }
 
 export async function showMainWindow(): Promise<void> {
+  await show();
   const window = getCurrentWindow();
   await window.show();
   await window.unminimize();
   await window.setFocus();
+}
+
+export async function onTrayToggleRecording(
+  handler: () => void,
+): Promise<() => void> {
+  if (!isTauri()) {
+    return () => undefined;
+  }
+
+  return listen("tray-toggle-recording", () => {
+    handler();
+  });
 }

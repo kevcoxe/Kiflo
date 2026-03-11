@@ -11,14 +11,13 @@ import {
   captureClipboard,
   createHistoryRecord,
   getFrontmostApp,
+  onTrayToggleRecording,
   getPermissionStatus,
   getSettings,
   listHistory,
-  quitApp,
   registerGlobalShortcut,
   restoreClipboard,
   setClipboardText,
-  showMainWindow,
   simulatePaste,
   startRecording,
   stopRecording,
@@ -26,7 +25,6 @@ import {
   unregisterGlobalShortcut,
   updateSettings,
 } from "@/lib/desktop";
-import { ensureTray } from "@/lib/tray";
 
 export type WorkflowStatus =
   | "booting"
@@ -158,9 +156,14 @@ export function useDictationController() {
 
   useEffect(() => {
     let disposed = false;
+    let removeTrayToggleListener = () => undefined;
 
     async function bootstrap() {
       try {
+        removeTrayToggleListener = await onTrayToggleRecording(() => {
+          void toggleRecording();
+        });
+
         const [loadedSettings, loadedPermissions, loadedHistory] =
           await Promise.all([
             getSettings(),
@@ -187,29 +190,6 @@ export function useDictationController() {
         setHistory(loadedHistory);
         setStatus("idle");
         setInitialized(true);
-
-        try {
-          await ensureTray({
-            onShowWindow: () => {
-              void showMainWindow();
-            },
-            onToggleRecording: () => {
-              void toggleRecording();
-            },
-            onQuit: () => {
-              void quitApp();
-            },
-          });
-        } catch (trayError) {
-          if (!disposed) {
-            setError(
-              `Tray initialization failed: ${describeError(
-                trayError,
-                "Unknown tray error.",
-              )}`,
-            );
-          }
-        }
       } catch (bootstrapError) {
         if (disposed) {
           return;
@@ -224,6 +204,7 @@ export function useDictationController() {
 
     return () => {
       disposed = true;
+      removeTrayToggleListener();
       void unregisterAllGlobalShortcuts();
     };
   }, []);

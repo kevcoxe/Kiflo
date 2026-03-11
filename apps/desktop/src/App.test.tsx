@@ -1,11 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 import * as desktop from "@/lib/desktop";
-import { ensureTray } from "@/lib/tray";
-
-vi.mock("@/lib/tray", () => ({
-  ensureTray: vi.fn().mockResolvedValue(undefined),
-}));
 
 const defaultSettings = {
   hotkey: "Option+Space",
@@ -31,6 +26,7 @@ function mockSuccessfulBootstrap() {
   vi.spyOn(desktop, "registerGlobalShortcut").mockResolvedValue(undefined);
   vi.spyOn(desktop, "unregisterGlobalShortcut").mockResolvedValue(undefined);
   vi.spyOn(desktop, "unregisterAllGlobalShortcuts").mockResolvedValue(undefined);
+  vi.spyOn(desktop, "onTrayToggleRecording").mockResolvedValue(() => undefined);
   vi.spyOn(desktop, "showMainWindow").mockResolvedValue(undefined);
   vi.spyOn(desktop, "quitApp").mockResolvedValue(undefined);
   vi.spyOn(desktop, "startRecording").mockResolvedValue(undefined);
@@ -166,13 +162,13 @@ describe("App", () => {
     ).toBeGreaterThan(0);
   });
 
-  it("creates the tray once the app boots", async () => {
+  it("subscribes to native tray events once the app boots", async () => {
     vi.stubGlobal("fetch", vi.fn());
 
     render(<App />);
 
     await waitFor(() => {
-      expect(ensureTray).toHaveBeenCalledTimes(1);
+      expect(desktop.onTrayToggleRecording).toHaveBeenCalledTimes(1);
     });
   });
 

@@ -11,7 +11,16 @@ use std::{fs, path::PathBuf, sync::Mutex};
 use models::{
     ClipboardSnapshot, HistoryRecord, NewHistoryRecord, PermissionStatus, RecordedAudio, Settings,
 };
-use tauri::{AppHandle, Manager, State};
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::TrayIconBuilder,
+    AppHandle, Emitter, Manager, State, WindowEvent,
+};
+
+const MENU_ITEM_OPEN: &str = "open";
+const MENU_ITEM_TOGGLE_RECORDING: &str = "toggle-recording";
+const MENU_ITEM_QUIT: &str = "quit";
+const TRAY_TOGGLE_RECORDING_EVENT: &str = "tray-toggle-recording";
 
 struct AppState {
     database_path: PathBuf,
@@ -105,15 +114,73 @@ fn quit_app(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn show_main_window(app: &AppHandle) -> Result<(), String> {
+    app.show().map_err(|error| error.to_string())?;
+
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "Main window is not available.".to_string())?;
+
+    window.show().map_err(|error| error.to_string())?;
+    window.unminimize().map_err(|error| error.to_string())?;
+    window.set_focus().map_err(|error| error.to_string())?;
+
+    Ok(())
+}
+
+fn create_tray(app: &AppHandle) -> tauri::Result<()> {
+    let open = MenuItem::with_id(app, MENU_ITEM_OPEN, "Open Tator", true, None::<&str>)?;
+    let toggle = MenuItem::with_id(
+        app,
+        MENU_ITEM_TOGGLE_RECORDING,
+        "Toggle Dictation",
+        true,
+        None::<&str>,
+    )?;
+    let quit = MenuItem::with_id(app, MENU_ITEM_QUIT, "Quit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&open, &toggle, &quit])?;
+
+    let mut tray = TrayIconBuilder::with_id("main-tray")
+        .menu(&menu)
+        .tooltip("Tator")
+        .show_menu_on_left_click(true)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            MENU_ITEM_OPEN => {
+                let _ = show_main_window(app);
+            }
+            MENU_ITEM_TOGGLE_RECORDING => {
+                let _ = app.emit(TRAY_TOGGLE_RECORDING_EVENT, ());
+            }
+            MENU_ITEM_QUIT => {
+                app.exit(0);
+            }
+            _ => {}
+        });
+
+    if let Some(icon) = app.default_window_icon().cloned() {
+        tray = tray.icon(icon);
+    }
+
+    tray.build(app)?;
+    Ok(())
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
             fs::create_dir_all(&app_data_dir)?;
             let database_path = app_data_dir.join("tator.sqlite3");
             db::initialize(&database_path).map_err(std::io::Error::other)?;
             app.manage(AppState::new(database_path));
+            create_tray(&app.handle()).map_err(std::io::Error::other)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
