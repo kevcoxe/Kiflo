@@ -51,6 +51,7 @@ const DEFAULT_SETTINGS: Settings = {
   interactionMode: "hold",
   preferredMode: "default",
   saveHistory: true,
+  hideDockIcon: false,
 };
 
 const DEFAULT_PERMISSIONS: PermissionStatus = {

@@ -117,6 +117,16 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         />
         <span>Save recent dictation history</span>
       </label>
+      <label className="toggle">
+        <input
+          checked={settings.hideDockIcon}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("hideDockIcon", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Hide Dock icon after closing the window</span>
+      </label>
     </section>
   );
 }
