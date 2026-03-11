@@ -25,16 +25,6 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         <span>Stored locally in SQLite</span>
       </div>
       <label className="field">
-        <span>API base URL</span>
-        <input
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("apiBaseUrl", event.target.value)
-          }
-          type="text"
-          value={settings.apiBaseUrl}
-        />
-      </label>
-      <label className="field">
         <span>Global shortcut</span>
         <input
           onChange={(event: ChangeEvent<HTMLInputElement>) =>

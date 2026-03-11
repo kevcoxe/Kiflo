@@ -2,15 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import type {
   DictationMode,
   HistoryRecord,
+  ModelStatus,
   NewHistoryRecord,
   PermissionStatus,
   Settings,
 } from "@tator/shared-types";
-import { createApiClient } from "@/lib/api-client";
 import {
   captureClipboard,
+  cleanupText,
   createHistoryRecord,
+  downloadModel,
   getFrontmostApp,
+  getModelStatus,
   onTrayToggleRecording,
   getPermissionStatus,
   getSettings,
@@ -21,6 +24,7 @@ import {
   simulatePaste,
   startRecording,
   stopRecording,
+  transcribeAudio,
   unregisterAllGlobalShortcuts,
   unregisterGlobalShortcut,
   updateSettings,
@@ -40,7 +44,6 @@ export type WorkflowStatus =
 
 const DEFAULT_SETTINGS: Settings = {
   hotkey: "Option+Space",
-  apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000",
   autoPaste: true,
   pauseBackgroundAudio: true,
   recordingCueVolume: 75,
@@ -55,10 +58,18 @@ const DEFAULT_PERMISSIONS: PermissionStatus = {
   accessibility: "unknown",
 };
 
+const DEFAULT_MODEL_STATUS: ModelStatus = {
+  installed: false,
+  downloading: false,
+  progress: null,
+  error: null,
+};
+
 type ControllerState = {
   status: WorkflowStatus;
   settings: Settings;
   permissions: PermissionStatus;
+  modelStatus: ModelStatus;
   mode: DictationMode;
   history: HistoryRecord[];
   lastRawText: string | null;
@@ -112,6 +123,7 @@ export function useDictationController() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [permissions, setPermissions] =
     useState<PermissionStatus>(DEFAULT_PERMISSIONS);
+  const [modelStatus, setModelStatus] = useState<ModelStatus>(DEFAULT_MODEL_STATUS);
   const [mode, setMode] = useState<DictationMode>(DEFAULT_SETTINGS.preferredMode);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
   const [lastRawText, setLastRawText] = useState<string | null>(null);
@@ -124,6 +136,7 @@ export function useDictationController() {
     status,
     settings,
     permissions,
+    modelStatus,
     mode,
     history,
     lastRawText,
@@ -138,6 +151,7 @@ export function useDictationController() {
       status,
       settings,
       permissions,
+      modelStatus,
       mode,
       history,
       lastRawText,
@@ -153,6 +167,7 @@ export function useDictationController() {
     initialized,
     lastCleanText,
     lastRawText,
+    modelStatus,
     mode,
     permissions,
     settings,
@@ -161,7 +176,7 @@ export function useDictationController() {
 
   useEffect(() => {
     let disposed = false;
-    let removeTrayToggleListener = () => undefined;
+    let removeTrayToggleListener: () => void = () => undefined;
 
     async function bootstrap() {
       try {
@@ -169,11 +184,12 @@ export function useDictationController() {
           void toggleRecording();
         });
 
-        const [loadedSettings, loadedPermissions, loadedHistory] =
+        const [loadedSettings, loadedPermissions, loadedHistory, loadedModelStatus] =
           await Promise.all([
             getSettings(),
             getPermissionStatus(),
             listHistory(8),
+            getModelStatus().catch(() => DEFAULT_MODEL_STATUS),
           ]);
 
         if (disposed) {
@@ -184,6 +200,7 @@ export function useDictationController() {
           ...stateRef.current,
           settings: loadedSettings,
           permissions: loadedPermissions,
+          modelStatus: loadedModelStatus,
           mode: loadedSettings.preferredMode,
           history: loadedHistory,
           status: "idle",
@@ -192,6 +209,7 @@ export function useDictationController() {
         setSettings(loadedSettings);
         setMode(loadedSettings.preferredMode);
         setPermissions(loadedPermissions);
+        setModelStatus(loadedModelStatus);
         setHistory(loadedHistory);
         setStatus("idle");
         setInitialized(true);
@@ -270,6 +288,19 @@ export function useDictationController() {
     }
   }
 
+  async function refreshModelState() {
+    try {
+      const nextStatus = await getModelStatus();
+      stateRef.current = {
+        ...stateRef.current,
+        modelStatus: nextStatus,
+      };
+      setModelStatus(nextStatus);
+    } catch {
+      // Model state is best-effort to keep the UI responsive.
+    }
+  }
+
   async function appendHistory(record: NewHistoryRecord) {
     if (!stateRef.current.settings.saveHistory) {
       return;
@@ -305,17 +336,28 @@ export function useDictationController() {
       const audio = await stopRecording();
       void playRecordingStopCue(activeState.settings.recordingCueVolume);
       const appName = await getFrontmostApp();
-      const client = createApiClient(activeState.settings.apiBaseUrl);
-      const transcription = await client.transcribe(
+      const transcription = await transcribeAudio(
         audio.audioBase64,
         activeState.mode,
         appName,
       );
-      const cleanup = await client.cleanup({
-        raw_text: transcription.raw_text,
-        mode: activeState.mode,
-        app_name: appName,
-      });
+      const cleanup = await cleanupText(
+        transcription.raw_text,
+        activeState.mode,
+        appName,
+      );
+      const rawText = transcription.raw_text.trim();
+      const cleanText = cleanup.clean_text.trim();
+      if (!rawText) {
+        throw new Error(
+          "No speech was detected in the recording. Try speaking louder or checking the selected microphone.",
+        );
+      }
+      if (!cleanText) {
+        throw new Error(
+          "The cleanup step returned empty text. Try again or switch recording modes.",
+        );
+      }
 
       setLastRawText(transcription.raw_text);
       setLastCleanText(cleanup.clean_text);
@@ -360,6 +402,7 @@ export function useDictationController() {
       setError(describeError(processingError, "Unable to finish dictation."));
     } finally {
       await refreshPermissions();
+      await refreshModelState();
     }
   }
 
@@ -436,10 +479,27 @@ export function useDictationController() {
     await setClipboardText(stateRef.current.fallbackText);
   }
 
+  async function installModel() {
+    try {
+      setError(null);
+      setModelStatus((current) => ({
+        ...current,
+        downloading: true,
+        error: null,
+      }));
+      await downloadModel();
+    } catch (downloadError) {
+      setError(describeError(downloadError, "Unable to download the local speech model."));
+    } finally {
+      await refreshModelState();
+    }
+  }
+
   return {
     status,
     settings,
     permissions,
+    modelStatus,
     mode,
     history,
     lastRawText,
@@ -454,5 +514,6 @@ export function useDictationController() {
     stopHoldRecording,
     retryPaste,
     copyFallbackText,
+    downloadModel: installModel,
   };
 }

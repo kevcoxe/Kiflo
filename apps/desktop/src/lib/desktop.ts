@@ -9,11 +9,15 @@ import {
 } from "@tauri-apps/plugin-global-shortcut";
 import type {
   ClipboardSnapshot,
+  CleanupResponse,
+  DictationMode,
   HistoryRecord,
+  ModelStatus,
   NewHistoryRecord,
   PermissionStatus,
   RecordedAudio,
   Settings,
+  TranscriptionResponse,
 } from "@tator/shared-types";
 
 function formatDesktopError(error: unknown): string {
@@ -80,6 +84,40 @@ export async function startRecording(
 
 export async function stopRecording(): Promise<RecordedAudio> {
   return invokeDesktop<RecordedAudio>("stop_recording");
+}
+
+export async function transcribeAudio(
+  audioBase64: string,
+  mode: DictationMode,
+  appName?: string | null,
+): Promise<TranscriptionResponse> {
+  return invokeDesktop<TranscriptionResponse>("transcribe_audio", {
+    audioBase64,
+    mode,
+    appName,
+  });
+}
+
+export async function cleanupText(
+  rawText: string,
+  mode: DictationMode,
+  appName?: string | null,
+  preserveRaw = false,
+): Promise<CleanupResponse> {
+  return invokeDesktop<CleanupResponse>("cleanup_text", {
+    rawText,
+    mode,
+    appName,
+    preserveRaw,
+  });
+}
+
+export async function getModelStatus(): Promise<ModelStatus> {
+  return invokeDesktop<ModelStatus>("get_model_status");
+}
+
+export async function downloadModel(): Promise<void> {
+  return invokeDesktop("download_model");
 }
 
 export async function getFrontmostApp(): Promise<string | null> {

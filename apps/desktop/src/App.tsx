@@ -113,8 +113,8 @@ export default function App() {
           <h1>Tator</h1>
           <p className="lead">
             {isHoldMode
-              ? `Hold ${controller.settings.hotkey} or the button below to record, then release to clean the text through the API and paste it back into the frontmost app.`
-              : `Toggle dictation with ${controller.settings.hotkey} or the button below, then let the API clean the text before it is pasted back into the frontmost app.`}
+              ? `Hold ${controller.settings.hotkey} or the button below to record, then release to transcribe locally and paste the cleaned text back into the frontmost app.`
+              : `Toggle dictation with ${controller.settings.hotkey} or the button below, then let the local speech pipeline clean the text before it is pasted back into the frontmost app.`}
           </p>
         </div>
         <div className={`status-badge status-${controller.status}`}>
@@ -178,6 +178,36 @@ export default function App() {
               <dd>{controller.permissions.accessibility}</dd>
             </div>
           </dl>
+        </section>
+
+        <section className="panel">
+          <div className="panel-header">
+            <h2>Speech model</h2>
+            <span>Local transcription runtime</span>
+          </div>
+          <div className="result-block">
+            <strong>Status</strong>
+            <p>
+              {controller.modelStatus.installed
+                ? "Installed and ready."
+                : controller.modelStatus.downloading
+                  ? "Downloading local speech model..."
+                  : "Not installed yet."}
+            </p>
+          </div>
+          {controller.modelStatus.error ? (
+            <p className="error-banner">{controller.modelStatus.error}</p>
+          ) : null}
+          {!controller.modelStatus.installed ? (
+            <button
+              className="primary-button"
+              disabled={controller.modelStatus.downloading}
+              onClick={() => void controller.downloadModel()}
+              type="button"
+            >
+              {controller.modelStatus.downloading ? "Downloading..." : "Download Model"}
+            </button>
+          ) : null}
         </section>
 
         <section className="panel">

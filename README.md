@@ -1,9 +1,9 @@
 # Tator
 
-Tator is a macOS-first dictation MVP built as a Tauri desktop app with a FastAPI backend. The repository is organized as a small monorepo:
+Tator is a macOS-first dictation app built as a Tauri desktop app with local transcription and cleanup inside the app. The repository is organized as a small monorepo:
 
 - `apps/desktop`: Tauri v2 + React/TypeScript desktop app.
-- `apps/api`: FastAPI service with pluggable ASR and cleanup providers.
+- `apps/api`: Python MLX helper/runtime used for development and model tooling.
 - `packages/shared-types`: shared TypeScript contracts used by the desktop app.
 
 ## Prerequisites
@@ -18,34 +18,33 @@ Tator is a macOS-first dictation MVP built as a Tauri desktop app with a FastAPI
 For Apple-Silicon local ASR with MLX:
 
 - Apple Silicon Mac
-- Python 3.12 is the safest runtime for the API environment right now
+- Python 3.12 is the safest runtime for the helper environment right now
 - `ffmpeg` in `PATH` via `brew install ffmpeg`
 
 ## Bootstrap
 
 1. Install JavaScript dependencies with `npm install`.
-2. Install API dependencies with `uv sync --project apps/api --extra dev`.
-3. Copy `.env.example`, `apps/api/.env.example`, and `apps/desktop/.env.example` if you need local overrides.
-4. Start the API with `npm run dev:api`.
-5. Start the desktop UI with `npm run tauri:dev`.
+2. Start the desktop UI with `npm run tauri:dev`.
 
-To enable local MLX Whisper transcription in the API:
+The shipped desktop app no longer talks to a separate HTTP API. Transcription and cleanup run through native Tauri commands.
 
-1. Set `TATOR_ASR_PROVIDER=mlx_whisper` in `apps/api/.env`.
-2. Optionally override `TATOR_MLX_WHISPER_MODEL_REPO` and `TATOR_MLX_WHISPER_DOWNLOAD_ROOT`.
-3. The first transcription will download the configured MLX model if it is not already cached.
-4. If MLX fails to initialize, recreate `apps/api/.venv` with Python 3.12 and resync dependencies.
+To enable local MLX Whisper transcription during development:
+
+1. Install the helper runtime with `uv sync --project apps/api --extra dev`.
+2. Launch the desktop app with `TATOR_INTERNAL_ASR_PROVIDER=mlx_whisper npm run tauri:dev`.
+3. Use the in-app `Download Model` action the first time you need the local MLX model.
+4. If the helper runtime is not auto-detected, set `TATOR_PYTHON_EXECUTABLE` to the Python interpreter that has `mlx_whisper` installed.
 
 ## Verification
 
-- `npm test` runs the desktop Vitest suite, the FastAPI pytest suite, and the Rust unit tests.
+- `npm test` runs the desktop Vitest suite, the helper pytest suite, and the Rust unit tests.
 - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` validates the native Tauri layer.
 
 ## Current MVP Slice
 
 - Toggle global hotkey (`Option+Space`)
 - Local audio capture
-- Mock cleanup pipeline
+- Native cleanup pipeline inside the desktop app
 - Optional Apple-Silicon local ASR via MLX Whisper
 - Clipboard-based paste and restore flow
 - Local SQLite-backed settings and history
