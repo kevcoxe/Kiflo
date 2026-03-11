@@ -14,6 +14,7 @@ use models::{
     NewHistoryRecord, PermissionStatus, RecordedAudio, Settings, TranscriptionResponse,
 };
 use tauri::{
+    image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager, State, WindowEvent,
@@ -180,6 +181,18 @@ fn show_main_window(app: &AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn tray_icon_image() -> Option<Image<'static>> {
+    #[cfg(target_os = "macos")]
+    {
+        Image::from_bytes(include_bytes!("../icons/source/tray-icon-template.png")).ok()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Image::from_bytes(include_bytes!("../icons/source/tray-icon-color.png")).ok()
+    }
+}
+
 fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, MENU_ITEM_OPEN, "Open Tator", true, None::<&str>)?;
     let toggle = MenuItem::with_id(
@@ -209,7 +222,14 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             _ => {}
         });
 
-    if let Some(icon) = app.default_window_icon().cloned() {
+    if let Some(icon) = tray_icon_image() {
+        tray = tray.icon(icon);
+
+        #[cfg(target_os = "macos")]
+        {
+            tray = tray.icon_as_template(true);
+        }
+    } else if let Some(icon) = app.default_window_icon().cloned() {
         tray = tray.icon(icon);
     }
 

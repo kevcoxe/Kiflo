@@ -16,8 +16,17 @@ use uuid::Uuid;
 use crate::models::{CleanupResponse, DictationMode, ModelStatus, TranscriptionResponse};
 
 const HELPER_SCRIPT: &str = include_str!("../resources/python/tator_mlx_helper.py");
-const MODEL_REPO: &str = "mlx-community/whisper-tiny.en-mlx";
 const MODEL_LANGUAGE: &str = "en";
+const MODEL_NAME: &str = "whisper-tiny.en-mlx";
+const MODEL_CONFIG_BYTES: &[u8] = include_bytes!(
+    "../../../../models--mlx-community--whisper-tiny.en-mlx/blobs/61ae64eae9676a5a89f3069a90d7109b45ce9447"
+);
+const MODEL_WEIGHTS_BYTES: &[u8] = include_bytes!(
+    "../../../../models--mlx-community--whisper-tiny.en-mlx/blobs/4627203f0807d6496dda0d200e893b04ff24c98e73aa51c485c06203a0330b17"
+);
+const MODEL_README_BYTES: &[u8] = include_bytes!(
+    "../../../../models--mlx-community--whisper-tiny.en-mlx/blobs/d6e15b759c0ee16b72be3aa70c3d74e62e6c9992"
+);
 const MOCK_PROVIDER: &str = "mock";
 const NATIVE_PROVIDER: &str = "native";
 const MLX_PROVIDER: &str = "mlx_whisper";
@@ -95,7 +104,12 @@ pub fn get_model_status(
         });
     }
 
-    let error = state.last_error.clone().or_else(ffmpeg_availability_error);
+    let install_error = ensure_model_installed(app_data_dir).err();
+    let error = state
+        .last_error
+        .clone()
+        .or_else(ffmpeg_availability_error)
+        .or(install_error);
 
     Ok(ModelStatus {
         installed: model_is_installed(app_data_dir),
@@ -121,7 +135,7 @@ pub fn download_model(
         state.last_error = None;
     }
 
-    let result = download_model_with_helper(app_data_dir);
+    let result = ensure_model_installed(app_data_dir).map(|_| ());
 
     let mut state = runtime
         .lock()
@@ -137,13 +151,7 @@ fn transcribe_with_helper(
     audio: &[u8],
     duration_ms: i64,
 ) -> Result<TranscriptionResponse, String> {
-    if !model_is_installed(app_data_dir) {
-        return Err(
-            "The local speech model is not installed yet. Download it from the desktop app first."
-                .to_string(),
-        );
-    }
-
+    let model_dir = ensure_model_installed(app_data_dir)?;
     let helper_script = ensure_helper_script(app_data_dir)?;
     let runner = resolve_helper_runner(app_data_dir, &helper_script);
     let temp_audio_path = env::temp_dir().join(format!("tator-audio-{}.wav", Uuid::new_v4()));
@@ -156,7 +164,7 @@ fn transcribe_with_helper(
         .arg("--audio-path")
         .arg(&temp_audio_path)
         .arg("--model-path")
-        .arg(model_directory(app_data_dir))
+        .arg(&model_dir)
         .arg("--language")
         .arg(MODEL_LANGUAGE)
         .env("PATH", helper_path_env())
@@ -195,38 +203,6 @@ fn transcribe_with_helper(
         duration_ms,
         provider: MLX_PROVIDER.to_string(),
     })
-}
-
-fn download_model_with_helper(app_data_dir: &Path) -> Result<(), String> {
-    let helper_script = ensure_helper_script(app_data_dir)?;
-    let runner = resolve_helper_runner(app_data_dir, &helper_script);
-    let model_dir = model_directory(app_data_dir);
-    if let Some(parent) = model_dir.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|error| format!("Unable to create the model directory: {error}"))?;
-    }
-
-    let output = Command::new(&runner.program)
-        .args(&runner.base_args)
-        .arg("download-model")
-        .arg("--model-repo")
-        .arg(MODEL_REPO)
-        .arg("--model-path")
-        .arg(&model_dir)
-        .env("PATH", helper_path_env())
-        .output()
-        .map_err(|error| {
-            format!(
-                "Unable to launch the local model downloader using `{}`: {error}",
-                runner.program
-            )
-        })?;
-
-    if !output.status.success() {
-        return Err(helper_error_message(&output.stderr, &output.stdout));
-    }
-
-    Ok(())
 }
 
 fn selected_provider() -> AsrProviderKind {
@@ -469,18 +445,55 @@ fn estimate_audio_duration_ms(audio_bytes: &[u8]) -> i64 {
 }
 
 fn model_directory(app_data_dir: &Path) -> PathBuf {
-    app_data_dir.join("models").join("whisper-tiny.en-mlx")
+    app_data_dir.join("models").join(MODEL_NAME)
 }
 
 fn model_is_installed(app_data_dir: &Path) -> bool {
     let model_dir = model_directory(app_data_dir);
-    if !model_dir.exists() || !model_dir.is_dir() {
+    if !model_dir.is_dir() {
         return false;
     }
 
-    fs::read_dir(model_dir)
-        .map(|mut entries| entries.next().is_some())
-        .unwrap_or(false)
+    model_dir.join("config.json").is_file()
+        && (model_dir.join("weights.safetensors").is_file()
+            || model_dir.join("weights.npz").is_file())
+}
+
+fn ensure_model_installed(app_data_dir: &Path) -> Result<PathBuf, String> {
+    let model_dir = model_directory(app_data_dir);
+    if model_dir.is_dir()
+        && model_dir.join("config.json").is_file()
+        && (model_dir.join("weights.safetensors").is_file()
+            || model_dir.join("weights.npz").is_file())
+    {
+        return Ok(model_dir);
+    }
+
+    fs::create_dir_all(&model_dir)
+        .map_err(|error| format!("Unable to create the model directory: {error}"))?;
+    write_embedded_asset(&model_dir.join("config.json"), MODEL_CONFIG_BYTES)?;
+    write_embedded_asset(&model_dir.join("weights.npz"), MODEL_WEIGHTS_BYTES)?;
+    write_embedded_asset(&model_dir.join("README.md"), MODEL_README_BYTES)?;
+
+    Ok(model_dir)
+}
+
+fn write_embedded_asset(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let should_write = match fs::metadata(path) {
+        Ok(metadata) => metadata.len() != bytes.len() as u64,
+        Err(_) => true,
+    };
+
+    if !should_write {
+        return Ok(());
+    }
+
+    fs::write(path, bytes).map_err(|error| {
+        format!(
+            "Unable to write bundled model asset `{}`: {error}",
+            path.display()
+        )
+    })
 }
 
 fn ensure_helper_script(app_data_dir: &Path) -> Result<PathBuf, String> {

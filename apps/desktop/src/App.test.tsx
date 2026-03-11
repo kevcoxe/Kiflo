@@ -234,7 +234,7 @@ describe("App", () => {
     });
   });
 
-  it("offers a model download action when the local model is missing", async () => {
+  it("offers a bundled model install action when the local model is missing", async () => {
     vi.spyOn(desktop, "getModelStatus").mockResolvedValue({
       installed: false,
       downloading: false,
@@ -244,7 +244,9 @@ describe("App", () => {
 
     render(<App />);
 
-    const button = await screen.findByRole("button", { name: "Download Model" });
+    const button = await screen.findByRole("button", {
+      name: "Install Bundled Model",
+    });
     fireEvent.click(button);
 
     await waitFor(() => {

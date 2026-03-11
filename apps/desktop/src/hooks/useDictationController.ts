@@ -489,7 +489,12 @@ export function useDictationController() {
       }));
       await downloadModel();
     } catch (downloadError) {
-      setError(describeError(downloadError, "Unable to download the local speech model."));
+      setError(
+        describeError(
+          downloadError,
+          "Unable to install the bundled local speech model.",
+        ),
+      );
     } finally {
       await refreshModelState();
     }
