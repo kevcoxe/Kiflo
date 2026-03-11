@@ -191,8 +191,8 @@ export default function App() {
               {controller.modelStatus.installed
                 ? "Installed and ready."
                 : controller.modelStatus.downloading
-                  ? "Downloading local speech model..."
-                  : "Not installed yet."}
+                  ? "Installing bundled local speech model..."
+                  : "Bundled model not installed yet."}
             </p>
           </div>
           {controller.modelStatus.error ? (
@@ -205,7 +205,7 @@ export default function App() {
               onClick={() => void controller.downloadModel()}
               type="button"
             >
-              {controller.modelStatus.downloading ? "Downloading..." : "Download Model"}
+              {controller.modelStatus.downloading ? "Installing..." : "Install Bundled Model"}
             </button>
           ) : null}
         </section>

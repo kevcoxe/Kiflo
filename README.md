@@ -32,7 +32,7 @@ To enable local MLX Whisper transcription during development:
 
 1. Install the helper runtime with `uv sync --project apps/api --extra dev`.
 2. Launch the desktop app with `TATOR_INTERNAL_ASR_PROVIDER=mlx_whisper npm run tauri:dev`.
-3. Use the in-app `Download Model` action the first time you need the local MLX model.
+3. The MLX Whisper tiny English model is bundled into the app and is copied into app data on first use. No network download is required for the model.
 4. If the helper runtime is not auto-detected, set `TATOR_PYTHON_EXECUTABLE` to the Python interpreter that has `mlx_whisper` installed.
 
 ## Verification
