@@ -34,6 +34,88 @@ jobs:
       - name: Install bundled MLX helper runtime
         run: uv sync --project apps/api --extra dev
 
+      - name: Sync desktop version from tag
+        env:
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: |
+          VERSION="${RELEASE_VERSION#v}"
+          export VERSION
+          node <<'EOF'
+          const fs = require("node:fs");
+
+          const version = process.env.VERSION;
+          const jsonFiles = [
+            "apps/desktop/package.json",
+            "apps/desktop/src-tauri/tauri.conf.json",
+          ];
+
+          for (const file of jsonFiles) {
+            const content = JSON.parse(fs.readFileSync(file, "utf8"));
+            content.version = version;
+            fs.writeFileSync(file, `${JSON.stringify(content, null, 2)}\n`);
+          }
+
+          const cargoTomlPath = "apps/desktop/src-tauri/Cargo.toml";
+          const cargoToml = fs.readFileSync(cargoTomlPath, "utf8");
+          const updatedCargoToml = cargoToml.replace(
+            /^version = ".*"$/m,
+            `version = "${version}"`,
+          );
+
+          if (cargoToml === updatedCargoToml) {
+            throw new Error("Failed to update version in apps/desktop/src-tauri/Cargo.toml");
+          }
+
+          fs.writeFileSync(cargoTomlPath, updatedCargoToml);
+          EOF
+
+      - name: Load release notes from changelog
+        id: release_notes
+        env:
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          node <<'EOF'
+          const fs = require("node:fs");
+
+          const tagName = process.env.TAG_NAME;
+          const version = tagName.replace(/^v/, "");
+          const lines = fs.readFileSync("CHANGELOG.md", "utf8").split(/\r?\n/);
+          const headingPrefix = `## [${version}] - `;
+          const start = lines.findIndex((line) => line.startsWith(headingPrefix));
+
+          if (start === -1) {
+            throw new Error(`Missing CHANGELOG entry for ${tagName}`);
+          }
+
+          let end = lines.length;
+
+          for (let index = start + 1; index < lines.length; index += 1) {
+            if (lines[index].startsWith("## [")) {
+              end = index;
+              break;
+            }
+          }
+
+          const bodyLines = lines.slice(start + 1, end);
+
+          while (bodyLines[0] === "") {
+            bodyLines.shift();
+          }
+
+          while (bodyLines.at(-1) === "") {
+            bodyLines.pop();
+          }
+
+          if (bodyLines.length === 0) {
+            throw new Error(`CHANGELOG entry for ${tagName} is empty`);
+          }
+
+          fs.appendFileSync(
+            process.env.GITHUB_OUTPUT,
+            `body<<CHANGELOG_BODY\n${bodyLines.join("\n")}\nCHANGELOG_BODY\n`,
+          );
+          EOF
+
       - name: Build and publish Tauri release
         uses: tauri-apps/tauri-action@v0.6.0
         env:
@@ -42,12 +124,6 @@ jobs:
           projectPath: apps/desktop
           tagName: ${{ github.ref_name }}
           releaseName: Tator ${{ github.ref_name }}
-          releaseBody: |
-            Automated macOS desktop release for ${{ github.ref_name }}.
-
-            This workflow currently publishes unsigned artifacts. If you want a
-            signed and notarized macOS app, add Apple signing secrets and extend
-            this workflow with the notarization environment variables Tauri
-            supports.
+          releaseBody: ${{ steps.release_notes.outputs.body }}
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}

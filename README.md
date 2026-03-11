@@ -52,10 +52,12 @@ GitHub Releases page.
 
 To cut a release:
 
-1. Keep the app version aligned in `apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml`,
-   and `apps/desktop/src-tauri/tauri.conf.json`.
-2. Push a version tag that starts with `v`, for example `v0.1.0`.
-3. GitHub Actions will build the desktop app on `macos-latest` and attach the Tauri bundles
+1. Run `npm run release:prep -- v0.1.4` to draft the next desktop release entry in `CHANGELOG.md`.
+2. Review and polish `CHANGELOG.md`.
+3. Commit the changelog and any related release changes.
+4. Push a version tag that starts with `v`, for example `v0.1.4`.
+5. GitHub Actions will sync the desktop app version from that tag, read the matching section from
+   `CHANGELOG.md`, and attach the Tauri bundles
    to a GitHub Release for that tag.
 
 The workflow publishes unsigned macOS artifacts by default. If you need a signed or notarized

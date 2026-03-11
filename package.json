@@ -10,6 +10,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "dev:desktop": "npm run dev --workspace @tator/desktop",
+    "release:prep": "node ./scripts/release-prep.mjs",
     "tauri:dev": "npm run tauri:dev --workspace @tator/desktop",
     "test": "npm run test --workspace @tator/desktop && ./apps/api/.venv/bin/pytest apps/api/tests && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "test:desktop": "npm run test --workspace @tator/desktop",
