@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS settings (
   api_base_url TEXT NOT NULL,
   auto_paste INTEGER NOT NULL,
   pause_background_audio INTEGER NOT NULL DEFAULT 1,
+  recording_cue_volume INTEGER NOT NULL DEFAULT 75,
   restore_clipboard INTEGER NOT NULL,
   interaction_mode TEXT NOT NULL DEFAULT 'hold',
   preferred_mode TEXT NOT NULL,
@@ -53,7 +54,7 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
     let connection = open(path)?;
     connection
         .query_row(
-            "SELECT hotkey, api_base_url, auto_paste, pause_background_audio, restore_clipboard, interaction_mode, preferred_mode, save_history
+            "SELECT hotkey, api_base_url, auto_paste, pause_background_audio, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, save_history
              FROM settings WHERE id = 1",
             [],
             |row| {
@@ -62,10 +63,11 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
                     api_base_url: row.get(1)?,
                     auto_paste: row.get::<_, i64>(2)? != 0,
                     pause_background_audio: row.get::<_, i64>(3)? != 0,
-                    restore_clipboard: row.get::<_, i64>(4)? != 0,
-                    interaction_mode: row.get(5)?,
-                    preferred_mode: row.get(6)?,
-                    save_history: row.get::<_, i64>(7)? != 0,
+                    recording_cue_volume: row.get(4)?,
+                    restore_clipboard: row.get::<_, i64>(5)? != 0,
+                    interaction_mode: row.get(6)?,
+                    preferred_mode: row.get(7)?,
+                    save_history: row.get::<_, i64>(8)? != 0,
                 })
             },
         )
@@ -153,17 +155,19 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 api_base_url,
                 auto_paste,
                 pause_background_audio,
+                recording_cue_volume,
                 restore_clipboard,
                 interaction_mode,
                 preferred_mode,
                 save_history
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(id) DO UPDATE SET
                 hotkey = excluded.hotkey,
                 api_base_url = excluded.api_base_url,
                 auto_paste = excluded.auto_paste,
                 pause_background_audio = excluded.pause_background_audio,
+                recording_cue_volume = excluded.recording_cue_volume,
                 restore_clipboard = excluded.restore_clipboard,
                 interaction_mode = excluded.interaction_mode,
                 preferred_mode = excluded.preferred_mode,
@@ -173,6 +177,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 settings.api_base_url,
                 bool_to_integer(settings.auto_paste),
                 bool_to_integer(settings.pause_background_audio),
+                settings.recording_cue_volume,
                 bool_to_integer(settings.restore_clipboard),
                 settings.interaction_mode,
                 settings.preferred_mode,
@@ -200,6 +205,12 @@ fn ensure_settings_columns(connection: &Connection) -> Result<(), String> {
         "settings",
         "pause_background_audio",
         "INTEGER NOT NULL DEFAULT 1",
+    )?;
+    add_column_if_missing(
+        connection,
+        "settings",
+        "recording_cue_volume",
+        "INTEGER NOT NULL DEFAULT 75",
     )
 }
 
@@ -261,6 +272,7 @@ mod tests {
         settings.hotkey = "Option+Shift+Space".to_string();
         settings.interaction_mode = "toggle".to_string();
         settings.pause_background_audio = false;
+        settings.recording_cue_volume = 0;
         settings.save_history = false;
 
         update_settings(&path, &settings).unwrap();
@@ -269,6 +281,7 @@ mod tests {
         assert_eq!(loaded.hotkey, "Option+Shift+Space");
         assert_eq!(loaded.interaction_mode, "toggle");
         assert!(!loaded.pause_background_audio);
+        assert_eq!(loaded.recording_cue_volume, 0);
         assert!(!loaded.save_history);
 
         let _ = fs::remove_file(path);

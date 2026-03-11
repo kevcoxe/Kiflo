@@ -30,6 +30,7 @@ export interface Settings {
   apiBaseUrl: string;
   autoPaste: boolean;
   pauseBackgroundAudio: boolean;
+  recordingCueVolume: number;
   restoreClipboard: boolean;
   interactionMode: RecordingInteractionMode;
   preferredMode: DictationMode;

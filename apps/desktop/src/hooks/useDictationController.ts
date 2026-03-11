@@ -25,6 +25,10 @@ import {
   unregisterGlobalShortcut,
   updateSettings,
 } from "@/lib/desktop";
+import {
+  playRecordingStartCue,
+  playRecordingStopCue,
+} from "@/lib/recording-cues";
 
 export type WorkflowStatus =
   | "booting"
@@ -39,6 +43,7 @@ const DEFAULT_SETTINGS: Settings = {
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000",
   autoPaste: true,
   pauseBackgroundAudio: true,
+  recordingCueVolume: 75,
   restoreClipboard: true,
   interactionMode: "hold",
   preferredMode: "default",
@@ -281,6 +286,7 @@ export function useDictationController() {
       setFallbackText(null);
       setStatus("recording");
       await startRecording(stateRef.current.settings.pauseBackgroundAudio);
+      void playRecordingStartCue(stateRef.current.settings.recordingCueVolume);
       await refreshPermissions();
     } catch (startError) {
       stateRef.current.status = "error";
@@ -297,6 +303,7 @@ export function useDictationController() {
 
       const activeState = stateRef.current;
       const audio = await stopRecording();
+      void playRecordingStopCue(activeState.settings.recordingCueVolume);
       const appName = await getFrontmostApp();
       const client = createApiClient(activeState.settings.apiBaseUrl);
       const transcription = await client.transcribe(

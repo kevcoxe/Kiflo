@@ -94,6 +94,19 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         />
         <span>Pause background audio during recording</span>
       </label>
+      <label className="field">
+        <span>Recording cue volume ({settings.recordingCueVolume}%)</span>
+        <input
+          min="0"
+          max="100"
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("recordingCueVolume", event.target.valueAsNumber)
+          }
+          step="1"
+          type="range"
+          value={settings.recordingCueVolume}
+        />
+      </label>
       <label className="toggle">
         <input
           checked={settings.restoreClipboard}

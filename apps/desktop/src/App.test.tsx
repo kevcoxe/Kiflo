@@ -1,12 +1,14 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 import * as desktop from "@/lib/desktop";
+import * as recordingCues from "@/lib/recording-cues";
 
 const defaultSettings = {
   hotkey: "Option+Space",
   apiBaseUrl: "http://127.0.0.1:8000",
   autoPaste: true,
   pauseBackgroundAudio: true,
+  recordingCueVolume: 75,
   restoreClipboard: true,
   interactionMode: "hold" as const,
   preferredMode: "default" as const,
@@ -46,6 +48,8 @@ function mockSuccessfulBootstrap() {
     ...record,
     appName: record.appName ?? null,
   }));
+  vi.spyOn(recordingCues, "playRecordingStartCue").mockResolvedValue(undefined);
+  vi.spyOn(recordingCues, "playRecordingStopCue").mockResolvedValue(undefined);
 }
 
 describe("App", () => {
@@ -94,12 +98,14 @@ describe("App", () => {
     fireEvent.mouseDown(holdButton);
     expect(await screen.findByRole("button", { name: "Release to Transcribe" })).toBeVisible();
     expect(desktop.startRecording).toHaveBeenCalledWith(true);
+    expect(recordingCues.playRecordingStartCue).toHaveBeenCalledWith(75);
 
     fireEvent.mouseUp(screen.getByRole("button", { name: "Release to Transcribe" }));
 
     await waitFor(() => {
       expect(screen.getByText("Inserted")).toBeVisible();
     });
+    expect(recordingCues.playRecordingStopCue).toHaveBeenCalledWith(75);
 
     expect(
       screen.getAllByText("Hey, can you send the update tomorrow?").length,
@@ -192,6 +198,21 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(desktop.startRecording).toHaveBeenLastCalledWith(false);
+    });
+  });
+
+  it("persists recording cue volume changes from the settings slider", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+
+    render(<App />);
+
+    const slider = await screen.findByLabelText("Recording cue volume (75%)");
+    fireEvent.change(slider, { target: { value: "0", valueAsNumber: 0 } });
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ recordingCueVolume: 0 }),
+      );
     });
   });
 
