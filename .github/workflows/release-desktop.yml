@@ -1,0 +1,47 @@
+name: Release Desktop
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 23
+          cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Build and publish Tauri release
+        uses: tauri-apps/tauri-action@v0.6.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: apps/desktop
+          tagName: ${{ github.ref_name }}
+          releaseName: Tator ${{ github.ref_name }}
+          releaseBody: |
+            Automated macOS desktop release for ${{ github.ref_name }}.
+
+            This workflow currently publishes unsigned artifacts. If you want a
+            signed and notarized macOS app, add Apple signing secrets and extend
+            this workflow with the notarization environment variables Tauri
+            supports.
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

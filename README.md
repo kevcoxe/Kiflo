@@ -40,6 +40,23 @@ To enable local MLX Whisper transcription during development:
 - `npm test` runs the desktop Vitest suite, the helper pytest suite, and the Rust unit tests.
 - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` validates the native Tauri layer.
 
+## GitHub Release Workflow
+
+The repository now includes a GitHub Actions workflow at `.github/workflows/release-desktop.yml`
+that builds the macOS Tauri app and publishes the generated artifacts to the repo's
+GitHub Releases page.
+
+To cut a release:
+
+1. Keep the app version aligned in `apps/desktop/package.json`, `apps/desktop/src-tauri/Cargo.toml`,
+   and `apps/desktop/src-tauri/tauri.conf.json`.
+2. Push a version tag that starts with `v`, for example `v0.1.0`.
+3. GitHub Actions will build the desktop app on `macos-latest` and attach the Tauri bundles
+   to a GitHub Release for that tag.
+
+The workflow publishes unsigned macOS artifacts by default. If you need a signed or notarized
+release, add the relevant Apple credentials as GitHub Actions secrets and extend the workflow.
+
 ## Current MVP Slice
 
 - Toggle global hotkey (`Option+Space`)
