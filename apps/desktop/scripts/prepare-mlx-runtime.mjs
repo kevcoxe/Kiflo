@@ -11,7 +11,10 @@ const outputDir = path.join(desktopDir, "src-tauri", "target", "bundled-runtime"
 
 const REQUIRED_SITE_PACKAGE_PATTERNS = [
   "81d243bd2c585b0f4821__mypyc.cpython-*.so",
+  "anyio",
+  "anyio-*.dist-info",
   "PyYAML-*.dist-info",
+  "pyyaml-*.dist-info",
   "certifi",
   "certifi-*.dist-info",
   "charset_normalizer",
@@ -22,10 +25,18 @@ const REQUIRED_SITE_PACKAGE_PATTERNS = [
   "fsspec-*.dist-info",
   "hf_xet",
   "hf_xet-*.dist-info",
+  "h11",
+  "h11-*.dist-info",
   "huggingface_hub",
   "huggingface_hub-*.dist-info",
+  "httpcore",
+  "httpcore-*.dist-info",
+  "httpx",
+  "httpx-*.dist-info",
   "idna",
   "idna-*.dist-info",
+  "llvmlite",
+  "llvmlite-*.dist-info",
   "mlx",
   "mlx-*.dist-info",
   "mlx_metal-*.dist-info",
@@ -35,12 +46,16 @@ const REQUIRED_SITE_PACKAGE_PATTERNS = [
   "more_itertools-*.dist-info",
   "numpy",
   "numpy-*.dist-info",
+  "numba",
+  "numba-*.dist-info",
   "packaging",
   "packaging-*.dist-info",
   "regex",
   "regex-*.dist-info",
   "requests",
   "requests-*.dist-info",
+  "scipy",
+  "scipy-*.dist-info",
   "tiktoken",
   "tiktoken-*.dist-info",
   "tiktoken_ext",
@@ -117,7 +132,12 @@ function main() {
   const sitePackagesDir = path.join(pythonLibDir, "site-packages");
   const pythonVersion = path.basename(pythonLibDir);
 
-  rmSync(outputDir, { force: true, recursive: true });
+  rmSync(outputDir, {
+    force: true,
+    recursive: true,
+    maxRetries: 5,
+    retryDelay: 100,
+  });
   mkdirSync(outputDir, { recursive: true });
 
   cpSync(pythonHome, path.join(outputDir, "python-home"), {

@@ -618,6 +618,12 @@ fn helper_error_message(stderr: &[u8], stdout: &[u8]) -> String {
         return "The local transcription helper fell back to a host Python that does not include the packaged runtime. Launch the built `Tator.app` bundle from `tauri build`, or rebuild so the app includes `Contents/Resources/runtime`.".to_string();
     }
 
+    if combined.contains("No module named 'httpx'")
+        || combined.contains("No module named \"httpx\"")
+    {
+        return "The packaged MLX runtime is incomplete. Rebuild the desktop app so `Contents/Resources/runtime` includes the Hugging Face client dependencies required by `mlx_whisper`.".to_string();
+    }
+
     if !stderr.is_empty() {
         stderr
     } else if !stdout.is_empty() {
@@ -866,5 +872,12 @@ mod tests {
         let message = helper_error_message(b"ModuleNotFoundError: No module named 'numpy'", b"");
         assert!(message.contains("host Python"));
         assert!(message.contains("Tator.app"));
+    }
+
+    #[test]
+    fn helper_error_message_maps_missing_httpx_to_incomplete_runtime_guidance() {
+        let message = helper_error_message(b"ModuleNotFoundError: No module named 'httpx'", b"");
+        assert!(message.contains("runtime is incomplete"));
+        assert!(message.contains("Contents/Resources/runtime"));
     }
 }

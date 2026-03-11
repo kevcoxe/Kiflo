@@ -1,4 +1,12 @@
 import argparse
+import warnings
+
+warnings.filterwarnings(
+    "ignore",
+    message="'audioop' is deprecated and slated for removal in Python 3.13",
+    category=DeprecationWarning,
+)
+
 import audioop
 import importlib
 import json
