@@ -612,6 +612,12 @@ fn helper_error_message(stderr: &[u8], stdout: &[u8]) -> String {
         return "The Python runtime used for local transcription is missing `huggingface_hub`. Recreate the helper environment with `uv sync --project apps/api --extra dev`, then point `TATOR_PYTHON_EXECUTABLE` at `apps/api/.venv/bin/python`.".to_string();
     }
 
+    if combined.contains("No module named 'numpy'")
+        || combined.contains("No module named \"numpy\"")
+    {
+        return "The local transcription helper fell back to a host Python that does not include the packaged runtime. Launch the built `Tator.app` bundle from `tauri build`, or rebuild so the app includes `Contents/Resources/runtime`.".to_string();
+    }
+
     if !stderr.is_empty() {
         stderr
     } else if !stdout.is_empty() {
@@ -656,7 +662,7 @@ fn helper_runtime_availability_error(
     }
 
     Some(
-        "This build does not include the packaged MLX runtime. Rebuild with `npm run prepare:mlx-runtime` before `tauri build`, or set `TATOR_PYTHON_EXECUTABLE` to a Python 3.12 environment that has `mlx_whisper` installed.".to_string(),
+        "This build does not include the packaged MLX runtime. Launch the built `Tator.app` bundle from `tauri build`, or rebuild with `npm run prepare:mlx-runtime` before `tauri build`. As a fallback, set `TATOR_PYTHON_EXECUTABLE` to a Python 3.12 environment that has `mlx_whisper` installed.".to_string(),
     )
 }
 
@@ -853,5 +859,12 @@ mod tests {
         assert!(message.contains("does not have `mlx_whisper` installed"));
         assert!(message.contains("uv sync --project apps/api --extra dev"));
         assert!(message.contains("TATOR_PYTHON_EXECUTABLE"));
+    }
+
+    #[test]
+    fn helper_error_message_maps_missing_numpy_to_bundle_guidance() {
+        let message = helper_error_message(b"ModuleNotFoundError: No module named 'numpy'", b"");
+        assert!(message.contains("host Python"));
+        assert!(message.contains("Tator.app"));
     }
 }

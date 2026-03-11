@@ -7,7 +7,7 @@ mod models;
 mod permissions;
 mod recording;
 
-use std::{fs, path::PathBuf, sync::Mutex};
+use std::{env, fs, path::PathBuf, sync::Mutex};
 
 use models::{
     CleanupResponse, ClipboardSnapshot, DictationMode, HistoryRecord, ModelStatus,
@@ -242,6 +242,21 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+fn resolve_resource_dir(app: &AppHandle) -> Option<PathBuf> {
+    app.path()
+        .resource_dir()
+        .ok()
+        .filter(|path| path.exists())
+        .or_else(|| {
+            env::current_exe().ok().and_then(|path| {
+                path.parent()
+                    .and_then(|parent| parent.parent())
+                    .map(|contents| contents.join("Resources"))
+                    .filter(|candidate| candidate.exists())
+            })
+        })
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -253,7 +268,7 @@ fn main() {
         })
         .setup(|app| {
             let app_data_dir = app.path().app_data_dir()?;
-            let resource_dir = app.path().resource_dir().ok();
+            let resource_dir = resolve_resource_dir(app.handle());
             fs::create_dir_all(&app_data_dir)?;
             let database_path = app_data_dir.join("tator.sqlite3");
             db::initialize(&database_path).map_err(std::io::Error::other)?;
