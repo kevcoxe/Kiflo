@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS settings (
   api_base_url TEXT NOT NULL,
   auto_paste INTEGER NOT NULL,
   restore_clipboard INTEGER NOT NULL,
+  interaction_mode TEXT NOT NULL DEFAULT 'hold',
   preferred_mode TEXT NOT NULL,
   save_history INTEGER NOT NULL
 );
@@ -34,6 +35,7 @@ pub fn initialize(path: &Path) -> Result<(), String> {
     connection
         .execute_batch(SCHEMA)
         .map_err(|error| error.to_string())?;
+    ensure_settings_columns(&connection)?;
 
     let row_count: i64 = connection
         .query_row("SELECT COUNT(*) FROM settings", [], |row| row.get(0))
@@ -50,7 +52,7 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
     let connection = open(path)?;
     connection
         .query_row(
-            "SELECT hotkey, api_base_url, auto_paste, restore_clipboard, preferred_mode, save_history
+            "SELECT hotkey, api_base_url, auto_paste, restore_clipboard, interaction_mode, preferred_mode, save_history
              FROM settings WHERE id = 1",
             [],
             |row| {
@@ -59,8 +61,9 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
                     api_base_url: row.get(1)?,
                     auto_paste: row.get::<_, i64>(2)? != 0,
                     restore_clipboard: row.get::<_, i64>(3)? != 0,
-                    preferred_mode: row.get(4)?,
-                    save_history: row.get::<_, i64>(5)? != 0,
+                    interaction_mode: row.get(4)?,
+                    preferred_mode: row.get(5)?,
+                    save_history: row.get::<_, i64>(6)? != 0,
                 })
             },
         )
@@ -148,15 +151,17 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 api_base_url,
                 auto_paste,
                 restore_clipboard,
+                interaction_mode,
                 preferred_mode,
                 save_history
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7)
              ON CONFLICT(id) DO UPDATE SET
                 hotkey = excluded.hotkey,
                 api_base_url = excluded.api_base_url,
                 auto_paste = excluded.auto_paste,
                 restore_clipboard = excluded.restore_clipboard,
+                interaction_mode = excluded.interaction_mode,
                 preferred_mode = excluded.preferred_mode,
                 save_history = excluded.save_history",
             params![
@@ -164,6 +169,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 settings.api_base_url,
                 bool_to_integer(settings.auto_paste),
                 bool_to_integer(settings.restore_clipboard),
+                settings.interaction_mode,
                 settings.preferred_mode,
                 bool_to_integer(settings.save_history),
             ],
@@ -175,6 +181,46 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
 
 fn open(path: &Path) -> Result<Connection, String> {
     Connection::open(path).map_err(|error| error.to_string())
+}
+
+fn ensure_settings_columns(connection: &Connection) -> Result<(), String> {
+    add_column_if_missing(
+        connection,
+        "settings",
+        "interaction_mode",
+        "TEXT NOT NULL DEFAULT 'hold'",
+    )
+}
+
+fn add_column_if_missing(
+    connection: &Connection,
+    table: &str,
+    column: &str,
+    definition: &str,
+) -> Result<(), String> {
+    let pragma = format!("PRAGMA table_info({table})");
+    let mut statement = connection
+        .prepare(&pragma)
+        .map_err(|error| error.to_string())?;
+    let columns = statement
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|error| error.to_string())?;
+    let found = columns
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .any(|existing| existing == column);
+
+    if found {
+        return Ok(());
+    }
+
+    let alter = format!("ALTER TABLE {table} ADD COLUMN {column} {definition}");
+    connection
+        .execute(&alter, [])
+        .map_err(|error| error.to_string())?;
+
+    Ok(())
 }
 
 fn bool_to_integer(value: bool) -> i64 {
@@ -202,12 +248,14 @@ mod tests {
 
         let mut settings = get_settings(&path).unwrap();
         settings.hotkey = "Option+Shift+Space".to_string();
+        settings.interaction_mode = "toggle".to_string();
         settings.save_history = false;
 
         update_settings(&path, &settings).unwrap();
 
         let loaded = get_settings(&path).unwrap();
         assert_eq!(loaded.hotkey, "Option+Shift+Space");
+        assert_eq!(loaded.interaction_mode, "toggle");
         assert!(!loaded.save_history);
 
         let _ = fs::remove_file(path);

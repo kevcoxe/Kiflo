@@ -41,6 +41,7 @@ const DEFAULT_SETTINGS: Settings = {
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000",
   autoPaste: true,
   restoreClipboard: true,
+  interactionMode: "hold",
   preferredMode: "default",
   saveHistory: true,
 };
@@ -62,6 +63,26 @@ type ControllerState = {
   error: string | null;
   initialized: boolean;
 };
+
+function describeError(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === "string" && error.length > 0) {
+    return error;
+  }
+
+  if (typeof error === "object" && error !== null) {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return fallback;
+    }
+  }
+
+  return fallback;
+}
 
 async function pause(milliseconds: number): Promise<void> {
   await new Promise((resolve) => window.setTimeout(resolve, milliseconds));
@@ -150,6 +171,15 @@ export function useDictationController() {
           return;
         }
 
+        stateRef.current = {
+          ...stateRef.current,
+          settings: loadedSettings,
+          permissions: loadedPermissions,
+          mode: loadedSettings.preferredMode,
+          history: loadedHistory,
+          status: "idle",
+          initialized: true,
+        };
         setSettings(loadedSettings);
         setMode(loadedSettings.preferredMode);
         setPermissions(loadedPermissions);
@@ -157,28 +187,35 @@ export function useDictationController() {
         setStatus("idle");
         setInitialized(true);
 
-        await ensureTray({
-          onShowWindow: () => {
-            void showMainWindow();
-          },
-          onToggleRecording: () => {
-            void toggleRecording();
-          },
-          onQuit: () => {
-            void quitApp();
-          },
-        });
+        try {
+          await ensureTray({
+            onShowWindow: () => {
+              void showMainWindow();
+            },
+            onToggleRecording: () => {
+              void toggleRecording();
+            },
+            onQuit: () => {
+              void quitApp();
+            },
+          });
+        } catch (trayError) {
+          if (!disposed) {
+            setError(
+              `Tray initialization failed: ${describeError(
+                trayError,
+                "Unknown tray error.",
+              )}`,
+            );
+          }
+        }
       } catch (bootstrapError) {
         if (disposed) {
           return;
         }
 
         setStatus("error");
-        setError(
-          bootstrapError instanceof Error
-            ? bootstrapError.message
-            : "Unable to bootstrap the desktop app.",
-        );
+        setError(describeError(bootstrapError, "Unable to bootstrap the desktop app."));
       }
     }
 
@@ -200,18 +237,32 @@ export function useDictationController() {
     async function syncShortcut() {
       try {
         await unregisterAllGlobalShortcuts();
-        await registerGlobalShortcut(settings.hotkey, () => {
-          void toggleRecording();
-        });
+        if (settings.interactionMode === "toggle") {
+          await registerGlobalShortcut(settings.hotkey, {
+            onPressed: () => {
+              void toggleRecording();
+            },
+          });
+        } else {
+          await registerGlobalShortcut(settings.hotkey, {
+            onPressed: () => {
+              void startHoldRecording();
+            },
+            onReleased: () => {
+              void stopHoldRecording();
+            },
+          });
+        }
       } catch (registrationError) {
         if (!active) {
           return;
         }
 
         setError(
-          registrationError instanceof Error
-            ? registrationError.message
-            : "Failed to register the global shortcut.",
+          describeError(
+            registrationError,
+            "Failed to register the global shortcut.",
+          ),
         );
       }
     }
@@ -222,7 +273,7 @@ export function useDictationController() {
       active = false;
       void unregisterGlobalShortcut(settings.hotkey).catch(() => undefined);
     };
-  }, [initialized, settings.hotkey]);
+  }, [initialized, settings.hotkey, settings.interactionMode]);
 
   async function refreshPermissions() {
     try {
@@ -242,6 +293,7 @@ export function useDictationController() {
   }
 
   async function beginRecording() {
+    stateRef.current.status = "recording";
     try {
       setError(null);
       setFallbackText(null);
@@ -249,16 +301,14 @@ export function useDictationController() {
       await startRecording();
       await refreshPermissions();
     } catch (startError) {
+      stateRef.current.status = "error";
       setStatus("error");
-      setError(
-        startError instanceof Error
-          ? startError.message
-          : "Unable to start recording.",
-      );
+      setError(describeError(startError, "Unable to start recording."));
     }
   }
 
   async function finishRecording() {
+    stateRef.current.status = "processing";
     try {
       setStatus("processing");
       setError(null);
@@ -294,9 +344,10 @@ export function useDictationController() {
           setFallbackText(cleanup.clean_text);
           setStatus("error");
           setError(
-            pasteError instanceof Error
-              ? pasteError.message
-              : "Paste failed. Use the fallback panel instead.",
+            describeError(
+              pasteError,
+              "Paste failed. Use the fallback panel instead.",
+            ),
           );
         }
       }
@@ -311,18 +362,37 @@ export function useDictationController() {
       });
 
       if (historyStatus === "inserted") {
+        stateRef.current.status = "success";
         setStatus("success");
       }
     } catch (processingError) {
+      stateRef.current.status = "error";
       setStatus("error");
-      setError(
-        processingError instanceof Error
-          ? processingError.message
-          : "Unable to finish dictation.",
-      );
+      setError(describeError(processingError, "Unable to finish dictation."));
     } finally {
       await refreshPermissions();
     }
+  }
+
+  async function startHoldRecording() {
+    const activeState = stateRef.current;
+    if (
+      activeState.status === "booting" ||
+      activeState.status === "processing" ||
+      activeState.status === "recording"
+    ) {
+      return;
+    }
+
+    await beginRecording();
+  }
+
+  async function stopHoldRecording() {
+    if (stateRef.current.status !== "recording") {
+      return;
+    }
+
+    await finishRecording();
   }
 
   async function toggleRecording() {
@@ -341,6 +411,11 @@ export function useDictationController() {
 
   async function saveSettings(nextSettings: Settings) {
     const saved = await updateSettings(nextSettings);
+    stateRef.current = {
+      ...stateRef.current,
+      settings: saved,
+      mode: saved.preferredMode,
+    };
     setSettings(saved);
     setMode(saved.preferredMode);
   }
@@ -360,11 +435,7 @@ export function useDictationController() {
       setFallbackText(null);
     } catch (retryError) {
       setStatus("error");
-      setError(
-        retryError instanceof Error
-          ? retryError.message
-          : "Retry paste failed.",
-      );
+      setError(describeError(retryError, "Retry paste failed."));
     }
   }
 
@@ -390,6 +461,8 @@ export function useDictationController() {
     setMode,
     saveSettings,
     toggleRecording,
+    startHoldRecording,
+    stopHoldRecording,
     retryPaste,
     copyFallbackText,
   };

@@ -12,7 +12,24 @@ function decodeBase64ToBytes(base64: string): Uint8Array {
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const message = await response.text();
+    const contentType = response.headers.get("content-type") ?? "";
+    let message = "";
+
+    if (contentType.includes("application/json")) {
+      const body = (await response.json().catch(() => null)) as
+        | { detail?: unknown; message?: unknown }
+        | null;
+      if (typeof body?.detail === "string" && body.detail.length > 0) {
+        message = body.detail;
+      } else if (typeof body?.message === "string" && body.message.length > 0) {
+        message = body.message;
+      } else if (body) {
+        message = JSON.stringify(body);
+      }
+    } else {
+      message = await response.text();
+    }
+
     throw new Error(message || `Request failed with status ${response.status}`);
   }
 

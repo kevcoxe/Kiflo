@@ -5,6 +5,7 @@ from fastapi import Depends
 from app.config import Settings, get_settings
 from app.providers.asr import AsrProvider
 from app.providers.cleanup import CleanupProvider
+from app.providers.mlx_whisper import MlxWhisperAsrProvider
 from app.providers.mock import MockAsrProvider, MockCleanupProvider
 from app.providers.openai_compatible import (
     OpenAICompatibleAsrProvider,
@@ -15,6 +16,12 @@ from app.providers.openai_compatible import (
 def build_asr_provider(settings: Settings) -> AsrProvider:
     if settings.asr_provider == "mock":
         return MockAsrProvider()
+    if settings.asr_provider == "mlx_whisper":
+        return MlxWhisperAsrProvider(
+            model_repo=settings.mlx_whisper_model_repo,
+            language=settings.mlx_whisper_language,
+            download_root=settings.mlx_whisper_download_root,
+        )
     if settings.asr_provider == "openai_compatible":
         return OpenAICompatibleAsrProvider()
     raise ValueError(f"Unsupported ASR provider: {settings.asr_provider}")

@@ -1,5 +1,9 @@
 import type { ChangeEvent } from "react";
-import { DICTATION_MODES, type Settings } from "@tator/shared-types";
+import {
+  DICTATION_MODES,
+  RECORDING_INTERACTION_MODES,
+  type Settings,
+} from "@tator/shared-types";
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -39,6 +43,21 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
           type="text"
           value={settings.hotkey}
         />
+      </label>
+      <label className="field">
+        <span>Recording trigger</span>
+        <select
+          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+            update("interactionMode", event.target.value as Settings["interactionMode"])
+          }
+          value={settings.interactionMode}
+        >
+          {RECORDING_INTERACTION_MODES.map((mode) => (
+            <option key={mode} value={mode}>
+              {mode === "hold" ? "Hold to record" : "Toggle on/off"}
+            </option>
+          ))}
+        </select>
       </label>
       <label className="field">
         <span>Preferred mode</span>

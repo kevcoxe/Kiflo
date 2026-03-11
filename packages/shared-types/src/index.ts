@@ -8,6 +8,11 @@ export const DICTATION_MODES = [
 
 export type DictationMode = (typeof DICTATION_MODES)[number];
 
+export const RECORDING_INTERACTION_MODES = ["hold", "toggle"] as const;
+
+export type RecordingInteractionMode =
+  (typeof RECORDING_INTERACTION_MODES)[number];
+
 export const HISTORY_STATUSES = [
   "recording",
   "processing",
@@ -25,6 +30,7 @@ export interface Settings {
   apiBaseUrl: string;
   autoPaste: boolean;
   restoreClipboard: boolean;
+  interactionMode: RecordingInteractionMode;
   preferredMode: DictationMode;
   saveHistory: boolean;
 }

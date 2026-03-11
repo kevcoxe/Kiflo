@@ -7,6 +7,7 @@ pub struct Settings {
     pub api_base_url: String,
     pub auto_paste: bool,
     pub restore_clipboard: bool,
+    pub interaction_mode: String,
     pub preferred_mode: String,
     pub save_history: bool,
 }
@@ -18,6 +19,7 @@ impl Default for Settings {
             api_base_url: "http://127.0.0.1:8000".to_string(),
             auto_paste: true,
             restore_clipboard: true,
+            interaction_mode: "hold".to_string(),
             preferred_mode: "default".to_string(),
             save_history: true,
         }

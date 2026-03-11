@@ -5,6 +5,8 @@ description = "FastAPI backend for the Tator dictation MVP."
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115.0,<1.0.0",
+  "mlx>=0.31.0,<1.0.0",
+  "mlx-whisper>=0.4.3,<1.0.0",
   "pydantic-settings>=2.7.0,<3.0.0",
   "python-multipart>=0.0.20,<1.0.0",
   "uvicorn[standard]>=0.35.0,<1.0.0"

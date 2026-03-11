@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   register,
@@ -14,69 +14,110 @@ import type {
   Settings,
 } from "@tator/shared-types";
 
+function formatDesktopError(error: unknown): string {
+  if (error instanceof Error && error.message) {
+    return error.message;
+  }
+
+  if (typeof error === "string" && error.length > 0) {
+    return error;
+  }
+
+  if (typeof error === "object" && error !== null) {
+    try {
+      return JSON.stringify(error);
+    } catch {
+      return "Unknown desktop bridge error.";
+    }
+  }
+
+  return "Unknown desktop bridge error.";
+}
+
+async function invokeDesktop<T>(command: string, args?: Record<string, unknown>) {
+  if (!isTauri()) {
+    throw new Error(
+      "This UI is not running inside Tauri. Start it with `npm run tauri:dev`, not only the Vite dev server.",
+    );
+  }
+
+  try {
+    return await invoke<T>(command, args);
+  } catch (error) {
+    throw new Error(formatDesktopError(error));
+  }
+}
+
 export async function getSettings(): Promise<Settings> {
-  return invoke<Settings>("get_settings");
+  return invokeDesktop<Settings>("get_settings");
 }
 
 export async function updateSettings(settings: Settings): Promise<Settings> {
-  return invoke<Settings>("update_settings", { settings });
+  return invokeDesktop<Settings>("update_settings", { settings });
 }
 
 export async function listHistory(limit = 10): Promise<HistoryRecord[]> {
-  return invoke<HistoryRecord[]>("list_history", { limit });
+  return invokeDesktop<HistoryRecord[]>("list_history", { limit });
 }
 
 export async function createHistoryRecord(
   record: NewHistoryRecord,
 ): Promise<HistoryRecord> {
-  return invoke<HistoryRecord>("create_history_record", { record });
+  return invokeDesktop<HistoryRecord>("create_history_record", { record });
 }
 
 export async function getPermissionStatus(): Promise<PermissionStatus> {
-  return invoke<PermissionStatus>("get_permission_status");
+  return invokeDesktop<PermissionStatus>("get_permission_status");
 }
 
 export async function startRecording(): Promise<void> {
-  return invoke("start_recording");
+  return invokeDesktop("start_recording");
 }
 
 export async function stopRecording(): Promise<RecordedAudio> {
-  return invoke<RecordedAudio>("stop_recording");
+  return invokeDesktop<RecordedAudio>("stop_recording");
 }
 
 export async function getFrontmostApp(): Promise<string | null> {
-  return invoke<string | null>("get_frontmost_app");
+  return invokeDesktop<string | null>("get_frontmost_app");
 }
 
 export async function captureClipboard(): Promise<ClipboardSnapshot> {
-  return invoke<ClipboardSnapshot>("capture_clipboard");
+  return invokeDesktop<ClipboardSnapshot>("capture_clipboard");
 }
 
 export async function setClipboardText(text: string): Promise<void> {
-  return invoke("set_clipboard_text", { text });
+  return invokeDesktop("set_clipboard_text", { text });
 }
 
 export async function restoreClipboard(
   snapshot: ClipboardSnapshot,
 ): Promise<void> {
-  return invoke("restore_clipboard", { snapshot });
+  return invokeDesktop("restore_clipboard", { snapshot });
 }
 
 export async function simulatePaste(): Promise<void> {
-  return invoke("simulate_paste");
+  return invokeDesktop("simulate_paste");
 }
 
 export async function quitApp(): Promise<void> {
-  return invoke("quit_app");
+  return invokeDesktop("quit_app");
 }
 
 export async function registerGlobalShortcut(
   shortcut: string,
-  handler: () => void,
+  handlers: {
+    onPressed: () => void;
+    onReleased?: () => void;
+  },
 ): Promise<void> {
   await register(shortcut, (event) => {
     if (event.state === "Pressed") {
-      handler();
+      handlers.onPressed();
+    }
+
+    if (event.state === "Released" && handlers.onReleased) {
+      handlers.onReleased();
     }
   });
 }

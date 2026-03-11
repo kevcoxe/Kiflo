@@ -1,5 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import App from "./App";
 import * as desktop from "@/lib/desktop";
 import { ensureTray } from "@/lib/tray";
@@ -13,6 +12,7 @@ const defaultSettings = {
   apiBaseUrl: "http://127.0.0.1:8000",
   autoPaste: true,
   restoreClipboard: true,
+  interactionMode: "hold" as const,
   preferredMode: "default" as const,
   saveHistory: true,
 };
@@ -90,14 +90,14 @@ describe("App", () => {
 
     render(<App />);
 
-    const toggleButton = await screen.findByRole("button", {
-      name: "Start Recording",
+    const holdButton = await screen.findByRole("button", {
+      name: "Hold to Record",
     });
 
-    await userEvent.click(toggleButton);
-    expect(await screen.findByRole("button", { name: "Stop Recording" })).toBeVisible();
+    fireEvent.mouseDown(holdButton);
+    expect(await screen.findByRole("button", { name: "Release to Transcribe" })).toBeVisible();
 
-    await userEvent.click(screen.getByRole("button", { name: "Stop Recording" }));
+    fireEvent.mouseUp(screen.getByRole("button", { name: "Release to Transcribe" }));
 
     await waitFor(() => {
       expect(screen.getByText("Inserted")).toBeVisible();
@@ -116,8 +116,9 @@ describe("App", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "Start Recording" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Stop Recording" }));
+    const holdButton = await screen.findByRole("button", { name: "Hold to Record" });
+    fireEvent.mouseDown(holdButton);
+    fireEvent.mouseUp(await screen.findByRole("button", { name: "Release to Transcribe" }));
 
     expect(await screen.findByText("upstream failed")).toBeVisible();
   });
@@ -152,8 +153,9 @@ describe("App", () => {
 
     render(<App />);
 
-    await userEvent.click(await screen.findByRole("button", { name: "Start Recording" }));
-    await userEvent.click(await screen.findByRole("button", { name: "Stop Recording" }));
+    const holdButton = await screen.findByRole("button", { name: "Hold to Record" });
+    fireEvent.mouseDown(holdButton);
+    fireEvent.mouseUp(await screen.findByRole("button", { name: "Release to Transcribe" }));
 
     expect(await screen.findByLabelText("Fallback paste panel")).toBeVisible();
     expect(screen.getByText("Accessibility denied")).toBeVisible();
@@ -169,6 +171,50 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(ensureTray).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("supports toggle mode when configured in settings", async () => {
+    vi.spyOn(desktop, "getSettings").mockResolvedValue({
+      ...defaultSettings,
+      interactionMode: "toggle",
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              raw_text: "follow up tomorrow morning",
+              language: "en",
+              duration_ms: 450,
+              provider: "mock",
+            }),
+            { status: 200 },
+          ),
+        )
+        .mockResolvedValueOnce(
+          new Response(
+            JSON.stringify({
+              clean_text: "Follow up tomorrow morning.",
+              provider: "mock",
+            }),
+            { status: 200 },
+          ),
+        ),
+    );
+
+    render(<App />);
+
+    const toggleButton = await screen.findByRole("button", { name: "Start Recording" });
+    fireEvent.click(toggleButton);
+    expect(await screen.findByRole("button", { name: "Stop Recording" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Stop Recording" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Inserted")).toBeVisible();
     });
   });
 });

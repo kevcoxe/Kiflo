@@ -1,12 +1,24 @@
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.audio import estimate_audio_duration_ms
 from app.config import Settings, get_settings
-from app.dependencies import get_asr_provider, get_cleanup_provider
+from app.dependencies import (
+    build_asr_provider,
+    build_cleanup_provider,
+    get_asr_provider,
+    get_cleanup_provider,
+)
 from app.providers.asr import AsrProvider
 from app.providers.cleanup import CleanupProvider
+from app.providers.mlx_whisper import (
+    MlxWhisperProviderExecutionError,
+    MlxWhisperProviderUnavailableError,
+)
 from app.providers.openai_compatible import ProviderNotConfiguredError
 from app.schemas import (
     CleanupRequest,
@@ -16,7 +28,22 @@ from app.schemas import (
     TranscriptionResponse,
 )
 
-app = FastAPI(title="Tator API", version="0.1.0")
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    settings = get_settings()
+    build_asr_provider(settings)
+    build_cleanup_provider(settings)
+    yield
+
+
+app = FastAPI(title="Tator API", version="0.1.0", lifespan=lifespan)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=get_settings().cors_allowed_origins,
+    allow_credentials=False,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -46,7 +73,9 @@ async def transcribe(
             app_name=app_name,
             duration_ms=duration_ms,
         )
-    except ProviderNotConfiguredError as exc:
+    except (ProviderNotConfiguredError, MlxWhisperProviderUnavailableError) as exc:
+        raise HTTPException(status_code=501, detail=str(exc)) from exc
+    except MlxWhisperProviderExecutionError as exc:
         raise HTTPException(status_code=501, detail=str(exc)) from exc
 
 

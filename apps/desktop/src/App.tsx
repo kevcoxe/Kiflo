@@ -1,4 +1,5 @@
 import { DICTATION_MODES } from "@tator/shared-types";
+import type { KeyboardEvent, PointerEvent } from "react";
 import { FallbackPanel } from "@/components/FallbackPanel";
 import { HistoryList } from "@/components/HistoryList";
 import { SettingsPanel } from "@/components/SettingsPanel";
@@ -23,6 +24,86 @@ function statusLabel(status: ReturnType<typeof useDictationController>["status"]
 
 export default function App() {
   const controller = useDictationController();
+  const isHoldMode = controller.settings.interactionMode === "hold";
+
+  function handlePressStart(event: PointerEvent<HTMLButtonElement>) {
+    if (!isHoldMode) {
+      return;
+    }
+
+    if (typeof event.currentTarget.setPointerCapture === "function") {
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // Ignore pointer-capture failures and still start recording.
+      }
+    }
+
+    void controller.startHoldRecording();
+  }
+
+  function handleMousePressStart() {
+    if (!isHoldMode) {
+      return;
+    }
+
+    void controller.startHoldRecording();
+  }
+
+  function handlePressStop(event: PointerEvent<HTMLButtonElement>) {
+    if (!isHoldMode) {
+      return;
+    }
+
+    if (
+      typeof event.currentTarget.hasPointerCapture === "function" &&
+      typeof event.currentTarget.releasePointerCapture === "function"
+    ) {
+      try {
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+          event.currentTarget.releasePointerCapture(event.pointerId);
+        }
+      } catch {
+        // Ignore pointer-capture release failures.
+      }
+    }
+
+    void controller.stopHoldRecording();
+  }
+
+  function handleMousePressStop() {
+    if (!isHoldMode) {
+      return;
+    }
+
+    void controller.stopHoldRecording();
+  }
+
+  function handleKeyDown(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!isHoldMode) {
+      return;
+    }
+
+    if (event.repeat) {
+      return;
+    }
+
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      void controller.startHoldRecording();
+    }
+  }
+
+  function handleKeyUp(event: KeyboardEvent<HTMLButtonElement>) {
+    if (!isHoldMode) {
+      return;
+    }
+
+    if (event.key === " " || event.key === "Enter") {
+      event.preventDefault();
+      void controller.stopHoldRecording();
+    }
+  }
 
   return (
     <main className="app-shell">
@@ -31,8 +112,9 @@ export default function App() {
           <p className="eyebrow">macOS dictation MVP</p>
           <h1>Tator</h1>
           <p className="lead">
-            Toggle dictation with {controller.settings.hotkey}, clean the text
-            through the API, then paste it back into the frontmost app.
+            {isHoldMode
+              ? `Hold ${controller.settings.hotkey} or the button below to record, then release to clean the text through the API and paste it back into the frontmost app.`
+              : `Toggle dictation with ${controller.settings.hotkey} or the button below, then let the API clean the text before it is pasted back into the frontmost app.`}
           </p>
         </div>
         <div className={`status-badge status-${controller.status}`}>
@@ -42,10 +124,27 @@ export default function App() {
           <button
             className="primary-button"
             disabled={!controller.initialized || controller.status === "processing"}
-            onClick={() => void controller.toggleRecording()}
+            onClick={() => {
+              if (!isHoldMode) {
+                void controller.toggleRecording();
+              }
+            }}
+            onKeyDown={handleKeyDown}
+            onKeyUp={handleKeyUp}
+            onMouseDown={handleMousePressStart}
+            onMouseUp={handleMousePressStop}
+            onPointerCancel={handlePressStop}
+            onPointerDown={handlePressStart}
+            onPointerUp={handlePressStop}
             type="button"
           >
-            {controller.status === "recording" ? "Stop Recording" : "Start Recording"}
+            {isHoldMode
+              ? controller.status === "recording"
+                ? "Release to Transcribe"
+                : "Hold to Record"
+              : controller.status === "recording"
+                ? "Stop Recording"
+                : "Start Recording"}
           </button>
           <select
             className="mode-select"
