@@ -1,0 +1,90 @@
+import type { ChangeEvent } from "react";
+import { DICTATION_MODES, type Settings } from "@tator/shared-types";
+
+interface SettingsPanelProps {
+  settings: Settings;
+  onChange: (settings: Settings) => void;
+}
+
+export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
+  function update<K extends keyof Settings>(key: K, value: Settings[K]) {
+    onChange({
+      ...settings,
+      [key]: value,
+    });
+  }
+
+  return (
+    <section className="panel">
+      <div className="panel-header">
+        <h2>Settings</h2>
+        <span>Stored locally in SQLite</span>
+      </div>
+      <label className="field">
+        <span>API base URL</span>
+        <input
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("apiBaseUrl", event.target.value)
+          }
+          type="text"
+          value={settings.apiBaseUrl}
+        />
+      </label>
+      <label className="field">
+        <span>Global shortcut</span>
+        <input
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("hotkey", event.target.value)
+          }
+          type="text"
+          value={settings.hotkey}
+        />
+      </label>
+      <label className="field">
+        <span>Preferred mode</span>
+        <select
+          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+            update("preferredMode", event.target.value as Settings["preferredMode"])
+          }
+          value={settings.preferredMode}
+        >
+          {DICTATION_MODES.map((mode) => (
+            <option key={mode} value={mode}>
+              {mode}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="toggle">
+        <input
+          checked={settings.autoPaste}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("autoPaste", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Paste automatically after cleanup</span>
+      </label>
+      <label className="toggle">
+        <input
+          checked={settings.restoreClipboard}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("restoreClipboard", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Restore clipboard after paste</span>
+      </label>
+      <label className="toggle">
+        <input
+          checked={settings.saveHistory}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("saveHistory", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Save recent dictation history</span>
+      </label>
+    </section>
+  );
+}

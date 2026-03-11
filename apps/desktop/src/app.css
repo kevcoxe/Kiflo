@@ -1,0 +1,261 @@
+:root {
+  color: #f4efe7;
+  background:
+    radial-gradient(circle at top left, rgba(214, 83, 52, 0.24), transparent 34%),
+    radial-gradient(circle at right, rgba(70, 142, 148, 0.18), transparent 28%),
+    linear-gradient(180deg, #171411 0%, #0d0c0b 100%);
+  font-family:
+    "IBM Plex Sans",
+    "Avenir Next",
+    sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.app-shell {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin: 0 auto;
+  max-width: 920px;
+  padding: 1.25rem;
+}
+
+.panel {
+  border: 1px solid rgba(244, 239, 231, 0.12);
+  border-radius: 24px;
+  background: rgba(23, 20, 17, 0.72);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.28);
+  padding: 1rem;
+  backdrop-filter: blur(16px);
+}
+
+.hero {
+  display: grid;
+  gap: 1rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.35rem;
+  color: #e98d60;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.hero h1 {
+  margin: 0;
+  font-family:
+    "Iowan Old Style",
+    "Palatino",
+    serif;
+  font-size: clamp(2.2rem, 5vw, 3.5rem);
+}
+
+.lead {
+  margin: 0;
+  max-width: 52rem;
+  color: rgba(244, 239, 231, 0.86);
+  line-height: 1.5;
+}
+
+.status-badge {
+  justify-self: flex-start;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.status-booting,
+.status-processing {
+  background: rgba(233, 141, 96, 0.18);
+  color: #ffd6b9;
+}
+
+.status-idle,
+.status-success {
+  background: rgba(87, 161, 130, 0.18);
+  color: #b9f5cf;
+}
+
+.status-recording,
+.status-error {
+  background: rgba(217, 72, 72, 0.18);
+  color: #ffcece;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.primary-button,
+.secondary-button,
+.mode-select,
+.field input,
+.field select {
+  border-radius: 14px;
+  border: 1px solid rgba(244, 239, 231, 0.15);
+  padding: 0.8rem 1rem;
+}
+
+.primary-button {
+  background: linear-gradient(135deg, #d65334, #ea8d60);
+  color: #fff9f2;
+  font-weight: 700;
+}
+
+.secondary-button,
+.mode-select,
+.field input,
+.field select {
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+}
+
+.primary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.grid-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.panel-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.panel-header h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.panel-header span,
+.muted {
+  color: rgba(244, 239, 231, 0.62);
+}
+
+.permission-grid {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+}
+
+.permission-grid dt {
+  color: rgba(244, 239, 231, 0.65);
+  font-size: 0.88rem;
+}
+
+.permission-grid dd {
+  margin: 0.2rem 0 0;
+  font-size: 1.1rem;
+  font-weight: 700;
+}
+
+.result-block {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.result-block + .result-block {
+  margin-top: 0.85rem;
+}
+
+.error-banner {
+  margin: 0;
+  border: 1px solid rgba(255, 132, 132, 0.28);
+  border-radius: 18px;
+  background: rgba(139, 35, 35, 0.16);
+  color: #ffd7d7;
+  padding: 0.9rem 1rem;
+}
+
+.fallback-panel pre {
+  overflow-x: auto;
+  border-radius: 16px;
+  background: rgba(0, 0, 0, 0.24);
+  margin: 0 0 1rem;
+  padding: 0.9rem;
+  white-space: pre-wrap;
+}
+
+.field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.field + .field,
+.toggle + .toggle,
+.field + .toggle,
+.toggle + .field {
+  margin-top: 0.85rem;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.history-list {
+  display: grid;
+  gap: 0.75rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.history-card {
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.8rem;
+}
+
+.history-card p {
+  margin: 0.55rem 0 0;
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  color: rgba(244, 239, 231, 0.58);
+  font-size: 0.83rem;
+  text-transform: uppercase;
+}
+
+@media (min-width: 760px) {
+  .grid-layout {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
