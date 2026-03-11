@@ -29,6 +29,7 @@ export interface Settings {
   hotkey: string;
   apiBaseUrl: string;
   autoPaste: boolean;
+  pauseBackgroundAudio: boolean;
   restoreClipboard: boolean;
   interactionMode: RecordingInteractionMode;
   preferredMode: DictationMode;

@@ -11,6 +11,7 @@ const defaultSettings = {
   hotkey: "Option+Space",
   apiBaseUrl: "http://127.0.0.1:8000",
   autoPaste: true,
+  pauseBackgroundAudio: true,
   restoreClipboard: true,
   interactionMode: "hold" as const,
   preferredMode: "default" as const,
@@ -96,6 +97,7 @@ describe("App", () => {
 
     fireEvent.mouseDown(holdButton);
     expect(await screen.findByRole("button", { name: "Release to Transcribe" })).toBeVisible();
+    expect(desktop.startRecording).toHaveBeenCalledWith(true);
 
     fireEvent.mouseUp(screen.getByRole("button", { name: "Release to Transcribe" }));
 
@@ -171,6 +173,29 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(ensureTray).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("lets users disable background audio pausing", async () => {
+    vi.stubGlobal("fetch", vi.fn());
+
+    render(<App />);
+
+    const checkbox = await screen.findByLabelText(
+      "Pause background audio during recording",
+    );
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ pauseBackgroundAudio: false }),
+      );
+    });
+
+    fireEvent.mouseDown(await screen.findByRole("button", { name: "Hold to Record" }));
+
+    await waitFor(() => {
+      expect(desktop.startRecording).toHaveBeenLastCalledWith(false);
     });
   });
 

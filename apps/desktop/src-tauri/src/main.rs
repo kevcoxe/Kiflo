@@ -1,13 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod db;
+mod media;
 mod models;
 mod permissions;
 mod recording;
 
 use std::{fs, path::PathBuf, sync::Mutex};
 
-use models::{ClipboardSnapshot, HistoryRecord, NewHistoryRecord, PermissionStatus, RecordedAudio, Settings};
+use models::{
+    ClipboardSnapshot, HistoryRecord, NewHistoryRecord, PermissionStatus, RecordedAudio, Settings,
+};
 use tauri::{AppHandle, Manager, State};
 
 struct AppState {
@@ -35,7 +38,10 @@ fn update_settings(state: State<'_, AppState>, settings: Settings) -> Result<Set
 }
 
 #[tauri::command]
-fn list_history(state: State<'_, AppState>, limit: Option<u32>) -> Result<Vec<HistoryRecord>, String> {
+fn list_history(
+    state: State<'_, AppState>,
+    limit: Option<u32>,
+) -> Result<Vec<HistoryRecord>, String> {
     db::list_history(state.inner().database_path.as_path(), limit.unwrap_or(10))
 }
 
@@ -53,8 +59,14 @@ fn get_permission_status() -> PermissionStatus {
 }
 
 #[tauri::command]
-fn start_recording(state: State<'_, AppState>) -> Result<(), String> {
-    recording::start_recording(&state.inner().recording)
+fn start_recording(
+    state: State<'_, AppState>,
+    pause_background_audio: Option<bool>,
+) -> Result<(), String> {
+    recording::start_recording(
+        &state.inner().recording,
+        pause_background_audio.unwrap_or(true),
+    )
 }
 
 #[tauri::command]

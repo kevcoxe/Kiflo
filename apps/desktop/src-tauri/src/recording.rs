@@ -13,23 +13,36 @@ use cpal::{
     Device, SampleFormat, Stream, StreamConfig,
 };
 
+use crate::media::MediaPlaybackInterruption;
 use crate::models::RecordedAudio;
 
 pub struct RecordingHandle {
+    media_playback: MediaPlaybackInterruption,
     stop_sender: Sender<()>,
     join_handle: JoinHandle<Result<RecordedAudio, String>>,
 }
 
-pub fn start_recording(slot: &Mutex<Option<RecordingHandle>>) -> Result<(), String> {
-    let mut guard = slot.lock().map_err(|_| "Recording state is poisoned".to_string())?;
+pub fn start_recording(
+    slot: &Mutex<Option<RecordingHandle>>,
+    pause_background_audio: bool,
+) -> Result<(), String> {
+    let mut guard = slot
+        .lock()
+        .map_err(|_| "Recording state is poisoned".to_string())?;
     if guard.is_some() {
         return Err("Recording is already in progress.".to_string());
     }
 
+    let media_playback = if pause_background_audio {
+        MediaPlaybackInterruption::begin()
+    } else {
+        MediaPlaybackInterruption::default()
+    };
     let (stop_sender, stop_receiver) = mpsc::channel();
     let join_handle = thread::spawn(move || record_until_stopped(stop_receiver));
 
     *guard = Some(RecordingHandle {
+        media_playback,
         stop_sender,
         join_handle,
     });
@@ -39,21 +52,32 @@ pub fn start_recording(slot: &Mutex<Option<RecordingHandle>>) -> Result<(), Stri
 
 pub fn stop_recording(slot: &Mutex<Option<RecordingHandle>>) -> Result<RecordedAudio, String> {
     let handle = {
-        let mut guard = slot.lock().map_err(|_| "Recording state is poisoned".to_string())?;
+        let mut guard = slot
+            .lock()
+            .map_err(|_| "Recording state is poisoned".to_string())?;
         guard
             .take()
             .ok_or_else(|| "No active recording is currently running.".to_string())?
     };
 
-    handle
-        .stop_sender
-        .send(())
-        .map_err(|_| "Recording thread stopped unexpectedly.".to_string())?;
+    let RecordingHandle {
+        stop_sender,
+        join_handle,
+        mut media_playback,
+    } = handle;
 
-    handle
-        .join_handle
+    let stop_result = stop_sender.send(());
+    let audio_result = join_handle
         .join()
-        .map_err(|_| "Recording thread panicked.".to_string())?
+        .map_err(|_| "Recording thread panicked.".to_string())?;
+
+    media_playback.resume();
+
+    if stop_result.is_err() && audio_result.is_ok() {
+        Err("Recording thread stopped unexpectedly.".to_string())
+    } else {
+        audio_result
+    }
 }
 
 fn record_until_stopped(stop_receiver: Receiver<()>) -> Result<RecordedAudio, String> {

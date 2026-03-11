@@ -86,6 +86,16 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
       </label>
       <label className="toggle">
         <input
+          checked={settings.pauseBackgroundAudio}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("pauseBackgroundAudio", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Pause background audio during recording</span>
+      </label>
+      <label className="toggle">
+        <input
           checked={settings.restoreClipboard}
           onChange={(event: ChangeEvent<HTMLInputElement>) =>
             update("restoreClipboard", event.target.checked)

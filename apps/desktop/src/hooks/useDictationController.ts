@@ -40,6 +40,7 @@ const DEFAULT_SETTINGS: Settings = {
   hotkey: "Option+Space",
   apiBaseUrl: import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000",
   autoPaste: true,
+  pauseBackgroundAudio: true,
   restoreClipboard: true,
   interactionMode: "hold",
   preferredMode: "default",
@@ -298,7 +299,7 @@ export function useDictationController() {
       setError(null);
       setFallbackText(null);
       setStatus("recording");
-      await startRecording();
+      await startRecording(stateRef.current.settings.pauseBackgroundAudio);
       await refreshPermissions();
     } catch (startError) {
       stateRef.current.status = "error";

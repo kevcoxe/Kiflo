@@ -70,8 +70,10 @@ export async function getPermissionStatus(): Promise<PermissionStatus> {
   return invokeDesktop<PermissionStatus>("get_permission_status");
 }
 
-export async function startRecording(): Promise<void> {
-  return invokeDesktop("start_recording");
+export async function startRecording(
+  pauseBackgroundAudio: boolean,
+): Promise<void> {
+  return invokeDesktop("start_recording", { pauseBackgroundAudio });
 }
 
 export async function stopRecording(): Promise<RecordedAudio> {
