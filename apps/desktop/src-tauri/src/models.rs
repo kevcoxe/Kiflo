@@ -11,6 +11,7 @@ pub struct Settings {
     pub interaction_mode: String,
     pub preferred_mode: String,
     pub save_history: bool,
+    pub hide_dock_icon: bool,
 }
 
 impl Default for Settings {
@@ -24,6 +25,7 @@ impl Default for Settings {
             interaction_mode: "hold".to_string(),
             preferred_mode: "default".to_string(),
             save_history: true,
+            hide_dock_icon: false,
         }
     }
 }

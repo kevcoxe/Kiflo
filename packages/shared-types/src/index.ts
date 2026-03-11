@@ -34,6 +34,7 @@ export interface Settings {
   interactionMode: RecordingInteractionMode;
   preferredMode: DictationMode;
   saveHistory: boolean;
+  hideDockIcon: boolean;
 }
 
 export interface HistoryRecord {

@@ -12,6 +12,7 @@ const defaultSettings = {
   interactionMode: "hold" as const,
   preferredMode: "default" as const,
   saveHistory: true,
+  hideDockIcon: false,
 };
 
 const defaultPermissions = {
@@ -189,6 +190,21 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(desktop.startRecording).toHaveBeenLastCalledWith(false);
+    });
+  });
+
+  it("persists the Dock icon preference from settings", async () => {
+    render(<App />);
+
+    const checkbox = await screen.findByLabelText(
+      "Hide Dock icon after closing the window",
+    );
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ hideDockIcon: true }),
+      );
     });
   });
 

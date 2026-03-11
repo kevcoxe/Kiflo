@@ -17,7 +17,7 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Emitter, Manager, State, WindowEvent,
+    ActivationPolicy, AppHandle, Emitter, Manager, State, WindowEvent,
 };
 
 const MENU_ITEM_OPEN: &str = "open";
@@ -173,6 +173,10 @@ fn quit_app(app: AppHandle) -> Result<(), String> {
 }
 
 fn show_main_window(app: &AppHandle) -> Result<(), String> {
+    if should_hide_dock_icon_on_close(app) {
+        set_dock_visibility_for_window_state(app, true)?;
+    }
+
     app.show().map_err(|error| error.to_string())?;
 
     let window = app
@@ -182,6 +186,38 @@ fn show_main_window(app: &AppHandle) -> Result<(), String> {
     window.show().map_err(|error| error.to_string())?;
     window.unminimize().map_err(|error| error.to_string())?;
     window.set_focus().map_err(|error| error.to_string())?;
+
+    Ok(())
+}
+
+fn should_hide_dock_icon_on_close(app: &AppHandle) -> bool {
+    app.try_state::<AppState>()
+        .and_then(|state| db::get_settings(state.database_path.as_path()).ok())
+        .map(|settings| settings.hide_dock_icon)
+        .unwrap_or(false)
+}
+
+fn set_dock_visibility_for_window_state(
+    app: &AppHandle,
+    window_is_visible: bool,
+) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let policy = if window_is_visible {
+            ActivationPolicy::Regular
+        } else {
+            ActivationPolicy::Accessory
+        };
+
+        app.set_activation_policy(policy)
+            .map_err(|error| error.to_string())?;
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        let _ = window_is_visible;
+    }
 
     Ok(())
 }
@@ -264,6 +300,9 @@ fn main() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                if should_hide_dock_icon_on_close(&window.app_handle()) {
+                    let _ = set_dock_visibility_for_window_state(&window.app_handle(), false);
+                }
             }
         })
         .setup(|app| {
