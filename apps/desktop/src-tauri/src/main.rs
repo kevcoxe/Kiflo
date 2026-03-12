@@ -436,8 +436,13 @@ fn resolve_resource_dir(app: &AppHandle) -> Option<PathBuf> {
 }
 
 fn main() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
+    let builder =
+        tauri::Builder::default().plugin(tauri_plugin_global_shortcut::Builder::new().build());
+
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_nspanel::init());
+
+    builder
         .on_window_event(|window, event| {
             if window.label() != "main" {
                 return;

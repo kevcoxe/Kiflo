@@ -5,6 +5,11 @@ use tauri::{
     AppHandle, Emitter, Manager, Monitor, PhysicalPosition, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder,
 };
+#[cfg(target_os = "macos")]
+use tauri_nspanel::{
+    tauri_panel, CollectionBehavior, ManagerExt, PanelHandle, PanelLevel, StyleMask,
+    WebviewWindowExt,
+};
 
 pub const HUD_WINDOW_LABEL: &str = "hud";
 pub const HUD_STATE_EVENT: &str = "hud-state-changed";
@@ -14,6 +19,19 @@ const HUD_WIDTH: f64 = 272.0;
 const HUD_HEIGHT: f64 = 92.0;
 const HUD_MARGIN_TOP: i32 = 18;
 const HUD_MARGIN_RIGHT: i32 = 18;
+
+#[cfg(target_os = "macos")]
+tauri_panel! {
+    panel!(HudPanel {
+        config: {
+            can_become_key_window: false,
+            can_become_main_window: false,
+            becomes_key_only_if_needed: true,
+            hides_on_deactivate: false,
+            is_floating_panel: true
+        }
+    })
+}
 
 pub fn create_hud_window(app: &AppHandle) -> Result<(), String> {
     if app.get_webview_window(HUD_WINDOW_LABEL).is_some() {
@@ -43,7 +61,7 @@ pub fn create_hud_window(app: &AppHandle) -> Result<(), String> {
     hud_window
         .set_focusable(false)
         .map_err(|error| error.to_string())?;
-    apply_macos_fullscreen_auxiliary(&hud_window)?;
+    configure_macos_hud_window(&hud_window)?;
     Ok(())
 }
 
@@ -99,15 +117,9 @@ fn update_hud(
 
         if next_state.visible {
             position_hud_window(app, &hud_window)?;
-            hud_window
-                .set_always_on_top(true)
-                .map_err(|error| error.to_string())?;
-            hud_window
-                .set_visible_on_all_workspaces(true)
-                .map_err(|error| error.to_string())?;
-            hud_window.show().map_err(|error| error.to_string())?;
+            show_hud_window(app, &hud_window)?;
         } else {
-            hud_window.hide().map_err(|error| error.to_string())?;
+            hide_hud_window(app, &hud_window)?;
         }
     }
 
@@ -146,33 +158,100 @@ fn hud_position_for_monitor(
 }
 
 #[cfg(target_os = "macos")]
-fn apply_macos_fullscreen_auxiliary(window: &WebviewWindow) -> Result<(), String> {
-    use objc2_app_kit::NSWindow;
+fn configure_macos_hud_window(window: &WebviewWindow) -> Result<(), String> {
+    let panel = if let Ok(panel) = window.app_handle().get_webview_panel(HUD_WINDOW_LABEL) {
+        panel
+    } else {
+        window
+            .to_panel::<HudPanel>()
+            .map_err(|error| error.to_string())?
+    };
 
-    let ns_window = window.ns_window().map_err(|error| error.to_string())? as usize;
-    window
-        .run_on_main_thread(move || unsafe {
-            let ns_window = &*(ns_window as *mut NSWindow);
-            let behavior = hud_collection_behavior(ns_window.collectionBehavior());
-            ns_window.setCollectionBehavior(behavior);
-        })
-        .map_err(|error| error.to_string())
+    apply_macos_hud_panel_state(&panel);
+    Ok(())
 }
 
 #[cfg(not(target_os = "macos"))]
-fn apply_macos_fullscreen_auxiliary(_: &WebviewWindow) -> Result<(), String> {
+fn configure_macos_hud_window(_: &WebviewWindow) -> Result<(), String> {
     Ok(())
 }
 
 #[cfg(target_os = "macos")]
-fn hud_collection_behavior(
-    current: objc2_app_kit::NSWindowCollectionBehavior,
-) -> objc2_app_kit::NSWindowCollectionBehavior {
-    use objc2_app_kit::NSWindowCollectionBehavior;
+fn apply_macos_hud_panel_state(panel: &PanelHandle<tauri::Wry>) {
+    panel.set_level(hud_panel_level());
+    panel.set_style_mask(hud_style_mask().into());
+    panel.set_collection_behavior(hud_collection_behavior().into());
+    panel.set_floating_panel(true);
+    panel.set_becomes_key_only_if_needed(true);
+    panel.set_hides_on_deactivate(false);
+    panel.set_ignores_mouse_events(true);
+    panel.set_accepts_mouse_moved_events(false);
+    panel.set_has_shadow(false);
+    panel.set_opaque(false);
+    panel.set_transparent(true);
+}
 
-    current
-        | NSWindowCollectionBehavior::CanJoinAllSpaces
-        | NSWindowCollectionBehavior::FullScreenAuxiliary
+#[cfg(target_os = "macos")]
+fn show_hud_window(app: &AppHandle, hud_window: &WebviewWindow) -> Result<(), String> {
+    hud_window
+        .set_visible_on_all_workspaces(true)
+        .map_err(|error| error.to_string())?;
+
+    if let Ok(panel) = app.get_webview_panel(HUD_WINDOW_LABEL) {
+        apply_macos_hud_panel_state(&panel);
+        panel.show();
+        return Ok(());
+    }
+
+    hud_window
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
+    hud_window.show().map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_hud_window(_: &AppHandle, hud_window: &WebviewWindow) -> Result<(), String> {
+    hud_window
+        .set_always_on_top(true)
+        .map_err(|error| error.to_string())?;
+    hud_window
+        .set_visible_on_all_workspaces(true)
+        .map_err(|error| error.to_string())?;
+    hud_window.show().map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn hide_hud_window(app: &AppHandle, hud_window: &WebviewWindow) -> Result<(), String> {
+    if let Ok(panel) = app.get_webview_panel(HUD_WINDOW_LABEL) {
+        panel.hide();
+        return Ok(());
+    }
+
+    hud_window.hide().map_err(|error| error.to_string())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn hide_hud_window(_: &AppHandle, hud_window: &WebviewWindow) -> Result<(), String> {
+    hud_window.hide().map_err(|error| error.to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn hud_collection_behavior() -> CollectionBehavior {
+    CollectionBehavior::new()
+        .can_join_all_spaces()
+        .stationary()
+        .full_screen_auxiliary()
+        .ignores_cycle()
+}
+
+#[cfg(target_os = "macos")]
+fn hud_style_mask() -> StyleMask {
+    StyleMask::empty().borderless().nonactivating_panel()
+}
+
+#[cfg(target_os = "macos")]
+fn hud_panel_level() -> i64 {
+    PanelLevel::Status.value()
 }
 
 #[cfg(test)]
@@ -181,13 +260,18 @@ mod tests {
 
     #[cfg(target_os = "macos")]
     #[test]
-    fn hud_collection_behavior_adds_space_and_fullscreen_flags() {
-        use objc2_app_kit::NSWindowCollectionBehavior;
+    fn hud_collection_behavior_adds_fullscreen_panel_flags() {
+        let behavior = hud_collection_behavior().value();
 
-        let behavior = hud_collection_behavior(NSWindowCollectionBehavior::Stationary);
-
-        assert!(behavior.contains(NSWindowCollectionBehavior::CanJoinAllSpaces));
-        assert!(behavior.contains(NSWindowCollectionBehavior::FullScreenAuxiliary));
-        assert!(behavior.contains(NSWindowCollectionBehavior::Stationary));
+        assert!(behavior
+            .contains(tauri_nspanel::objc2_app_kit::NSWindowCollectionBehavior::CanJoinAllSpaces));
+        assert!(behavior.contains(
+            tauri_nspanel::objc2_app_kit::NSWindowCollectionBehavior::FullScreenAuxiliary
+        ));
+        assert!(
+            behavior.contains(tauri_nspanel::objc2_app_kit::NSWindowCollectionBehavior::Stationary)
+        );
+        assert!(behavior
+            .contains(tauri_nspanel::objc2_app_kit::NSWindowCollectionBehavior::IgnoresCycle));
     }
 }

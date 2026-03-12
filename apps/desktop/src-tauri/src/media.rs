@@ -125,7 +125,9 @@ function run() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .spawn()
-        .map_err(|error| format!("Unable to launch osascript for media state detection: {error}"))?;
+        .map_err(|error| {
+            format!("Unable to launch osascript for media state detection: {error}")
+        })?;
 
     child
         .stdin
