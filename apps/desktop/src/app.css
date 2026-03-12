@@ -138,9 +138,16 @@ body.hud-window #root {
 }
 
 .primary-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
   background: linear-gradient(135deg, #d65334, #ea8d60);
   color: #fff9f2;
   font-weight: 700;
+}
+
+.primary-button.is-processing {
+  background: linear-gradient(135deg, #8c5b25, #d49644);
 }
 
 .secondary-button,
@@ -154,6 +161,15 @@ body.hud-window #root {
 .primary-button:disabled {
   cursor: not-allowed;
   opacity: 0.55;
+}
+
+.button-spinner {
+  width: 0.9rem;
+  height: 0.9rem;
+  border: 2px solid rgba(255, 249, 242, 0.35);
+  border-top-color: #fff9f2;
+  border-radius: 999px;
+  animation: hud-spin 0.9s linear infinite;
 }
 
 .grid-layout {

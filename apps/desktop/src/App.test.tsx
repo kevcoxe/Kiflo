@@ -107,6 +107,8 @@ describe("App", () => {
 
     fireEvent.mouseUp(screen.getByRole("button", { name: "Release to Transcribe" }));
 
+    expect(await screen.findByRole("button", { name: "Processing..." })).toBeVisible();
+
     await waitFor(() => {
       expect(screen.getByText("Inserted")).toBeVisible();
     });

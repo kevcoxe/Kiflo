@@ -43,6 +43,8 @@ describe("RecordingHud", () => {
     });
 
     expect(await screen.findByText("Processing")).toBeVisible();
+    expect(screen.getByText("Cleaning up your dictation...")).toBeVisible();
+    expect(document.querySelector(".hud-spinner-ring")).toBeTruthy();
   });
 
   it("hides itself when the HUD state becomes hidden", async () => {

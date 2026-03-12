@@ -339,10 +339,10 @@ export function useDictationController() {
     try {
       setStatus("processing");
       setError(null);
+      void safelySetHudPhase("processing");
 
       const activeState = stateRef.current;
       const audio = await stopRecording();
-      void safelySetHudPhase("processing");
       void playRecordingStopCue(activeState.settings.recordingCueVolume);
       const appName = await getFrontmostApp();
       const transcription = await transcribeAudio(

@@ -125,11 +125,14 @@ export function RecordingHud() {
               })}
             </div>
           ) : hudState.phase === "processing" ? (
-            <div aria-hidden="true" className="hud-dots">
-              <span />
-              <span />
-              <span />
-            </div>
+            <>
+              <p className="hud-subtitle">Cleaning up your dictation...</p>
+              <div aria-hidden="true" className="hud-dots">
+                <span />
+                <span />
+                <span />
+              </div>
+            </>
           ) : (
             <p className="hud-subtitle">Dictation hit a snag.</p>
           )}
