@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import type { DictationMode } from "@tator/shared-types";
 import App from "./App";
 import * as desktop from "@/lib/desktop";
 import * as recordingCues from "@/lib/recording-cues";
@@ -39,6 +40,7 @@ function mockSuccessfulBootstrap() {
   vi.spyOn(desktop, "unregisterGlobalShortcut").mockResolvedValue(undefined);
   vi.spyOn(desktop, "unregisterAllGlobalShortcuts").mockResolvedValue(undefined);
   vi.spyOn(desktop, "onTrayToggleRecording").mockResolvedValue(() => undefined);
+  vi.spyOn(desktop, "onTrayModeChange").mockResolvedValue(() => undefined);
   vi.spyOn(desktop, "showMainWindow").mockResolvedValue(undefined);
   vi.spyOn(desktop, "quitApp").mockResolvedValue(undefined);
   vi.spyOn(desktop, "getHudState").mockResolvedValue({
@@ -195,6 +197,29 @@ describe("App", () => {
 
     await waitFor(() => {
       expect(desktop.onTrayToggleRecording).toHaveBeenCalledTimes(1);
+      expect(desktop.onTrayModeChange).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("updates the current and preferred mode when the tray menu changes it", async () => {
+    let trayModeHandler: ((mode: DictationMode) => void) | undefined;
+    vi.spyOn(desktop, "onTrayModeChange").mockImplementation(async (handler) => {
+      trayModeHandler = handler as typeof trayModeHandler;
+      return () => undefined;
+    });
+
+    render(<App />);
+
+    const [modeSelect] = await screen.findAllByRole("combobox");
+    const preferredModeSelect = await screen.findByLabelText("Preferred mode");
+
+    act(() => {
+      trayModeHandler?.("bullet_list");
+    });
+
+    await waitFor(() => {
+      expect(modeSelect).toHaveValue("bullet_list");
+      expect(preferredModeSelect).toHaveValue("bullet_list");
     });
   });
 

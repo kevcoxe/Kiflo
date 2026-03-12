@@ -54,7 +54,7 @@ pub fn initialize(path: &Path) -> Result<(), String> {
 
 pub fn get_settings(path: &Path) -> Result<Settings, String> {
     let connection = open(path)?;
-    connection
+    let mut settings = connection
         .query_row(
             "SELECT hotkey, auto_paste, pause_background_audio, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, save_history, hide_dock_icon, show_hud
              FROM settings WHERE id = 1",
@@ -74,13 +74,21 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
                 })
             },
         )
-        .map_err(|error| error.to_string())
+        .map_err(|error| error.to_string())?;
+
+    if normalize_settings(&mut settings) {
+        save_settings_connection(&connection, &settings)?;
+    }
+
+    Ok(settings)
 }
 
 pub fn update_settings(path: &Path, settings: &Settings) -> Result<Settings, String> {
     let connection = open(path)?;
-    save_settings_connection(&connection, settings)?;
-    Ok(settings.clone())
+    let mut normalized = settings.clone();
+    normalize_settings(&mut normalized);
+    save_settings_connection(&connection, &normalized)?;
+    Ok(normalized)
 }
 
 pub fn list_history(path: &Path, limit: u32) -> Result<Vec<HistoryRecord>, String> {
@@ -96,11 +104,12 @@ pub fn list_history(path: &Path, limit: u32) -> Result<Vec<HistoryRecord>, Strin
 
     let rows = statement
         .query_map(params![limit], |row| {
+            let mode: String = row.get(3)?;
             Ok(HistoryRecord {
                 id: row.get(0)?,
                 created_at: row.get(1)?,
                 app_name: row.get(2)?,
-                mode: row.get(3)?,
+                mode: normalize_history_mode(&mode),
                 audio_duration_ms: row.get(4)?,
                 raw_text: row.get(5)?,
                 clean_text: row.get(6)?,
@@ -122,7 +131,7 @@ pub fn create_history_record(
         id: Uuid::new_v4().to_string(),
         created_at: Utc::now().to_rfc3339(),
         app_name: record.app_name.clone(),
-        mode: record.mode.clone(),
+        mode: normalize_history_mode(&record.mode),
         audio_duration_ms: record.audio_duration_ms,
         raw_text: record.raw_text.clone(),
         clean_text: record.clean_text.clone(),
@@ -342,6 +351,32 @@ fn bool_to_integer(value: bool) -> i64 {
     }
 }
 
+fn normalize_settings(settings: &mut Settings) -> bool {
+    let normalized_mode = normalize_preferred_mode(&settings.preferred_mode);
+    if normalized_mode == settings.preferred_mode {
+        return false;
+    }
+
+    settings.preferred_mode = normalized_mode;
+    true
+}
+
+fn normalize_preferred_mode(mode: &str) -> String {
+    match mode {
+        "notes" => "bullet_list".to_string(),
+        "default" | "chat" | "bullet_list" => mode.to_string(),
+        _ => "default".to_string(),
+    }
+}
+
+fn normalize_history_mode(mode: &str) -> String {
+    match mode {
+        "notes" => "bullet_list".to_string(),
+        "default" | "chat" | "bullet_list" => mode.to_string(),
+        _ => "default".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{env, fs};
@@ -463,6 +498,66 @@ mod tests {
                 .map(|exists| !exists)
                 .unwrap()
         );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn normalizes_removed_email_preferred_mode_to_default() {
+        let path = temp_db_path();
+        initialize(&path).unwrap();
+
+        let connection = open(&path).unwrap();
+        connection
+            .execute(
+                "UPDATE settings SET preferred_mode = 'email' WHERE id = 1",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let settings = get_settings(&path).unwrap();
+        assert_eq!(settings.preferred_mode, "default");
+
+        let persisted_mode: String = open(&path)
+            .unwrap()
+            .query_row(
+                "SELECT preferred_mode FROM settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(persisted_mode, "default");
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn normalizes_removed_notes_preferred_mode_to_bullet_list() {
+        let path = temp_db_path();
+        initialize(&path).unwrap();
+
+        let connection = open(&path).unwrap();
+        connection
+            .execute(
+                "UPDATE settings SET preferred_mode = 'notes' WHERE id = 1",
+                [],
+            )
+            .unwrap();
+        drop(connection);
+
+        let settings = get_settings(&path).unwrap();
+        assert_eq!(settings.preferred_mode, "bullet_list");
+
+        let persisted_mode: String = open(&path)
+            .unwrap()
+            .query_row(
+                "SELECT preferred_mode FROM settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(persisted_mode, "bullet_list");
 
         let _ = fs::remove_file(path);
     }

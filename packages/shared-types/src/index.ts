@@ -1,8 +1,6 @@
 export const DICTATION_MODES = [
   "default",
-  "email",
   "chat",
-  "notes",
   "bullet_list",
 ] as const;
 

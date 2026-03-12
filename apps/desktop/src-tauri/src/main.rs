@@ -18,15 +18,21 @@ use models::{
 };
 use tauri::{
     image::Image,
-    menu::{Menu, MenuItem},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
     tray::TrayIconBuilder,
     ActivationPolicy, AppHandle, Emitter, Manager, State, WindowEvent,
 };
 
+const TRAY_ID: &str = "main-tray";
 const MENU_ITEM_OPEN: &str = "open";
 const MENU_ITEM_TOGGLE_RECORDING: &str = "toggle-recording";
+const MENU_ITEM_MODE_SUBMENU: &str = "mode-submenu";
+const MENU_ITEM_MODE_DEFAULT: &str = "mode-default";
+const MENU_ITEM_MODE_CHAT: &str = "mode-chat";
+const MENU_ITEM_MODE_LIST: &str = "mode-list";
 const MENU_ITEM_QUIT: &str = "quit";
 const TRAY_TOGGLE_RECORDING_EVENT: &str = "tray-toggle-recording";
+const TRAY_MODE_CHANGED_EVENT: &str = "tray-mode-changed";
 
 struct AppState {
     database_path: PathBuf,
@@ -56,8 +62,14 @@ fn get_settings(state: State<'_, AppState>) -> Result<Settings, String> {
 }
 
 #[tauri::command]
-fn update_settings(state: State<'_, AppState>, settings: Settings) -> Result<Settings, String> {
-    db::update_settings(state.inner().database_path.as_path(), &settings)
+fn update_settings(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: Settings,
+) -> Result<Settings, String> {
+    let saved = db::update_settings(state.inner().database_path.as_path(), &settings)?;
+    sync_tray_menu(&app, &saved.preferred_mode)?;
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -207,6 +219,101 @@ fn hide_hud_command(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
     hide_hud(&app, &state.inner().hud_state)
 }
 
+fn tray_mode_menu_items(
+    app: &AppHandle,
+    preferred_mode: &str,
+) -> tauri::Result<[CheckMenuItem<tauri::Wry>; 3]> {
+    Ok([
+        CheckMenuItem::with_id(
+            app,
+            MENU_ITEM_MODE_DEFAULT,
+            "default",
+            true,
+            preferred_mode == "default",
+            None::<&str>,
+        )?,
+        CheckMenuItem::with_id(
+            app,
+            MENU_ITEM_MODE_CHAT,
+            "chat",
+            true,
+            preferred_mode == "chat",
+            None::<&str>,
+        )?,
+        CheckMenuItem::with_id(
+            app,
+            MENU_ITEM_MODE_LIST,
+            "bullet_list",
+            true,
+            preferred_mode == "bullet_list",
+            None::<&str>,
+        )?,
+    ])
+}
+
+fn build_tray_menu(app: &AppHandle, preferred_mode: &str) -> tauri::Result<Menu<tauri::Wry>> {
+    let open = MenuItem::with_id(app, MENU_ITEM_OPEN, "Open Tator", true, None::<&str>)?;
+    let toggle = MenuItem::with_id(
+        app,
+        MENU_ITEM_TOGGLE_RECORDING,
+        "Toggle Dictation",
+        true,
+        None::<&str>,
+    )?;
+    let [default_mode, chat_mode, list_mode] = tray_mode_menu_items(app, preferred_mode)?;
+    let mode_menu = Submenu::with_id_and_items(
+        app,
+        MENU_ITEM_MODE_SUBMENU,
+        "Mode",
+        true,
+        &[&default_mode, &chat_mode, &list_mode],
+    )?;
+    let separator_before_mode = PredefinedMenuItem::separator(app)?;
+    let separator_before_quit = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, MENU_ITEM_QUIT, "Quit", true, None::<&str>)?;
+
+    Menu::with_items(
+        app,
+        &[
+            &open,
+            &toggle,
+            &separator_before_mode,
+            &mode_menu,
+            &separator_before_quit,
+            &quit,
+        ],
+    )
+}
+
+fn preferred_mode_for_menu_item(menu_id: &str) -> Option<&'static str> {
+    match menu_id {
+        MENU_ITEM_MODE_DEFAULT => Some("default"),
+        MENU_ITEM_MODE_CHAT => Some("chat"),
+        MENU_ITEM_MODE_LIST => Some("bullet_list"),
+        _ => None,
+    }
+}
+
+fn sync_tray_menu(app: &AppHandle, preferred_mode: &str) -> Result<(), String> {
+    let tray = app
+        .tray_by_id(TRAY_ID)
+        .ok_or_else(|| "Main tray icon is not available.".to_string())?;
+    let menu = build_tray_menu(app, preferred_mode).map_err(|error| error.to_string())?;
+    tray.set_menu(Some(menu)).map_err(|error| error.to_string())
+}
+
+fn update_preferred_mode_from_tray(app: &AppHandle, preferred_mode: &str) -> Result<(), String> {
+    let state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| "App state is not available.".to_string())?;
+    let mut settings = db::get_settings(state.database_path.as_path())?;
+    settings.preferred_mode = preferred_mode.to_string();
+    let saved = db::update_settings(state.database_path.as_path(), &settings)?;
+    sync_tray_menu(app, &saved.preferred_mode)?;
+    app.emit(TRAY_MODE_CHANGED_EVENT, saved.preferred_mode)
+        .map_err(|error| error.to_string())
+}
+
 fn show_main_window(app: &AppHandle) -> Result<(), String> {
     if should_hide_dock_icon_on_close(app) {
         set_dock_visibility_for_window_state(app, true)?;
@@ -270,18 +377,14 @@ fn tray_icon_image() -> Option<Image<'static>> {
 }
 
 fn create_tray(app: &AppHandle) -> tauri::Result<()> {
-    let open = MenuItem::with_id(app, MENU_ITEM_OPEN, "Open Tator", true, None::<&str>)?;
-    let toggle = MenuItem::with_id(
-        app,
-        MENU_ITEM_TOGGLE_RECORDING,
-        "Toggle Dictation",
-        true,
-        None::<&str>,
-    )?;
-    let quit = MenuItem::with_id(app, MENU_ITEM_QUIT, "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &toggle, &quit])?;
+    let preferred_mode = app
+        .try_state::<AppState>()
+        .and_then(|state| db::get_settings(state.database_path.as_path()).ok())
+        .map(|settings| settings.preferred_mode)
+        .unwrap_or_else(|| "default".to_string());
+    let menu = build_tray_menu(app, &preferred_mode)?;
 
-    let mut tray = TrayIconBuilder::with_id("main-tray")
+    let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
         .tooltip("Tator")
         .show_menu_on_left_click(true)
@@ -295,7 +398,11 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             MENU_ITEM_QUIT => {
                 app.exit(0);
             }
-            _ => {}
+            menu_id => {
+                if let Some(preferred_mode) = preferred_mode_for_menu_item(menu_id) {
+                    let _ = update_preferred_mode_from_tray(app, preferred_mode);
+                }
+            }
         });
 
     if let Some(icon) = tray_icon_image() {

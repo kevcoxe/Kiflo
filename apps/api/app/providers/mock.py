@@ -23,9 +23,7 @@ QUESTION_OPENERS = {
 
 MODE_TRANSCRIPTS = {
     DictationMode.DEFAULT: "hey can you send the update to rebekah tomorrow afternoon",
-    DictationMode.EMAIL: "hi rebekah just following up on the timeline for next week",
     DictationMode.CHAT: "running five minutes late be there soon",
-    DictationMode.NOTES: "make a list eggs milk bread and apples",
     DictationMode.BULLET_LIST: "make a list eggs milk bread and apples",
 }
 
@@ -67,7 +65,7 @@ class MockCleanupProvider(CleanupProvider):
         preserve_raw: bool,
     ) -> CleanupResponse:
         text = normalize_text(raw_text, preserve_raw=preserve_raw)
-        if mode in {DictationMode.NOTES, DictationMode.BULLET_LIST}:
+        if mode == DictationMode.BULLET_LIST:
             bullets = format_bullets(text)
             if bullets:
                 return CleanupResponse(clean_text=bullets, provider=self.name)
