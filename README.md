@@ -3,7 +3,7 @@
 Tator is a macOS-first dictation app built as a Tauri desktop app with local transcription and cleanup inside the app. The repository is organized as a small monorepo:
 
 - `apps/desktop`: Tauri v2 + React/TypeScript desktop app.
-- `apps/api`: Python MLX helper/runtime used for development and model tooling.
+- `apps/mlx-runtime`: Python MLX helper/runtime used for development and release packaging.
 - `packages/shared-types`: shared TypeScript contracts used by the desktop app.
 
 ## Prerequisites
@@ -29,19 +29,19 @@ The shipped desktop app no longer talks to a separate HTTP API. Transcription an
 
 To enable local MLX Whisper transcription during development:
 
-1. Install the helper runtime with `uv sync --project apps/api --extra dev`.
+1. Install the helper runtime with `uv sync --project apps/mlx-runtime --extra dev`.
 2. Launch the desktop app with `TATOR_INTERNAL_ASR_PROVIDER=mlx_whisper npm run tauri:dev`.
 3. The MLX Whisper tiny English model is bundled into the app and is copied into app data on first use. No network download is required for the model.
 4. The desktop helper now decodes the recorded WAV directly and does not require `ffmpeg`.
 5. If the helper runtime is not auto-detected in source development, set `TATOR_PYTHON_EXECUTABLE` to the Python interpreter that has `mlx_whisper` installed.
 
-If you see `No module named 'mlx_whisper'` on another Mac, the desktop app is usually picking up that machine's default `python3` instead of the repo helper environment. Run `uv sync --project apps/api --extra dev`, then start the app with `TATOR_PYTHON_EXECUTABLE=/absolute/path/to/apps/api/.venv/bin/python`.
+If you see `No module named 'mlx_whisper'` on another Mac, the desktop app is usually picking up that machine's default `python3` instead of the repo helper environment. Run `uv sync --project apps/mlx-runtime --extra dev`, then start the app with `TATOR_PYTHON_EXECUTABLE=/absolute/path/to/apps/mlx-runtime/.venv/bin/python`.
 
 Packaged builds now bundle a trimmed Python 3.12 MLX runtime into the `.app` during `tauri build`, so release artifacts should not depend on the destination machine's Python installation.
 
 ## Verification
 
-- `npm test` runs the desktop Vitest suite, the helper pytest suite, and the Rust unit tests.
+- `npm test` runs the desktop Vitest suite, the MLX helper pytest suite, and the Rust unit tests.
 - `cargo check --manifest-path apps/desktop/src-tauri/Cargo.toml` validates the native Tauri layer.
 
 ## GitHub Release Workflow

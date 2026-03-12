@@ -32,7 +32,7 @@ jobs:
         run: npm ci
 
       - name: Install bundled MLX helper runtime
-        run: uv sync --project apps/api --extra dev
+        run: uv sync --project apps/mlx-runtime --extra dev
 
       - name: Sync desktop version from tag
         env:

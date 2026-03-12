@@ -5,8 +5,10 @@ import { fileURLToPath } from "node:url";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const desktopDir = path.resolve(scriptDir, "..");
 const repoRoot = path.resolve(desktopDir, "..", "..");
-const apiVenvDir = path.join(repoRoot, "apps", "api", ".venv");
-const pyvenvCfgPath = path.join(apiVenvDir, "pyvenv.cfg");
+const runtimeVenvCandidates = [
+  path.join(repoRoot, "apps", "mlx-runtime", ".venv"),
+  path.join(repoRoot, "apps", "api", ".venv"),
+];
 const outputDir = path.join(desktopDir, "src-tauri", "target", "bundled-runtime");
 
 const REQUIRED_SITE_PACKAGE_PATTERNS = [
@@ -73,10 +75,17 @@ function fail(message) {
   process.exit(1);
 }
 
+function resolveRuntimeVenvDir() {
+  return runtimeVenvCandidates.find((candidate) => existsSync(path.join(candidate, "pyvenv.cfg")))
+    ?? runtimeVenvCandidates[0];
+}
+
 function readPythonHome() {
+  const runtimeVenvDir = resolveRuntimeVenvDir();
+  const pyvenvCfgPath = path.join(runtimeVenvDir, "pyvenv.cfg");
   if (!existsSync(pyvenvCfgPath)) {
     fail(
-      "Missing apps/api/.venv. Run `uv sync --project apps/api --extra dev` before building the desktop app.",
+      "Missing apps/mlx-runtime/.venv. Run `uv sync --project apps/mlx-runtime --extra dev` before building the desktop app.",
     );
   }
 
@@ -93,14 +102,17 @@ function readPythonHome() {
 }
 
 function findPythonLibDir() {
+  const runtimeVenvDir = resolveRuntimeVenvDir();
   const matches = globSync("python*", {
-    cwd: path.join(apiVenvDir, "lib"),
+    cwd: path.join(runtimeVenvDir, "lib"),
     onlyDirectories: true,
   });
   if (matches.length !== 1) {
-    fail("Expected exactly one Python lib directory under apps/api/.venv/lib.");
+    fail(
+      `Expected exactly one Python lib directory under ${path.relative(repoRoot, path.join(runtimeVenvDir, "lib"))}.`,
+    );
   }
-  return path.join(apiVenvDir, "lib", matches[0]);
+  return path.join(runtimeVenvDir, "lib", matches[0]);
 }
 
 function copySelectedSitePackages(sitePackagesDir, destinationDir) {
@@ -111,7 +123,9 @@ function copySelectedSitePackages(sitePackagesDir, destinationDir) {
       dot: true,
     });
     if (matches.length === 0) {
-      fail(`Missing required site-package asset matching \`${pattern}\`.`);
+      fail(
+        `Missing required site-package asset matching \`${pattern}\` in ${sitePackagesDir}. Run \`uv sync --project apps/mlx-runtime --extra dev\` to refresh the helper environment.`,
+      );
     }
 
     for (const relativePath of matches) {

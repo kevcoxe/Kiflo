@@ -570,8 +570,7 @@ fn resolve_helper_runner(
         });
     }
 
-    let dev_python = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../api/.venv/bin/python");
-    if dev_python.exists() {
+    if let Some(dev_python) = resolve_dev_python() {
         return Ok(HelperRunner {
             program: dev_python.to_string_lossy().into_owned(),
             base_args: vec![helper_script.to_string_lossy().into_owned()],
@@ -598,13 +597,13 @@ fn helper_error_message(stderr: &[u8], stdout: &[u8]) -> String {
     if combined.contains("No module named 'mlx_whisper'")
         || combined.contains("No module named \"mlx_whisper\"")
     {
-        return "The Python runtime used for local transcription does not have `mlx_whisper` installed. Run `uv sync --project apps/api --extra dev`, then relaunch with `TATOR_PYTHON_EXECUTABLE=/absolute/path/to/apps/api/.venv/bin/python` if the app does not auto-detect that environment.".to_string();
+        return "The Python runtime used for local transcription does not have `mlx_whisper` installed. Run `uv sync --project apps/mlx-runtime --extra dev`, then relaunch with `TATOR_PYTHON_EXECUTABLE=/absolute/path/to/apps/mlx-runtime/.venv/bin/python` if the app does not auto-detect that environment.".to_string();
     }
 
     if combined.contains("No module named 'huggingface_hub'")
         || combined.contains("No module named \"huggingface_hub\"")
     {
-        return "The Python runtime used for local transcription is missing `huggingface_hub`. Recreate the helper environment with `uv sync --project apps/api --extra dev`, then point `TATOR_PYTHON_EXECUTABLE` at `apps/api/.venv/bin/python`.".to_string();
+        return "The Python runtime used for local transcription is missing `huggingface_hub`. Recreate the helper environment with `uv sync --project apps/mlx-runtime --extra dev`, then point `TATOR_PYTHON_EXECUTABLE` at `apps/mlx-runtime/.venv/bin/python`.".to_string();
     }
 
     if combined.contains("No module named 'numpy'")
@@ -657,14 +656,22 @@ fn helper_runtime_availability_error(
         return None;
     }
 
-    let dev_python = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../api/.venv/bin/python");
-    if dev_python.exists() {
+    if resolve_dev_python().is_some() {
         return None;
     }
 
     Some(
         "This build does not include the packaged MLX runtime. Launch the built `Tator.app` bundle from `tauri build`, or rebuild with `npm run prepare:mlx-runtime` before `tauri build`. As a fallback, set `TATOR_PYTHON_EXECUTABLE` to a Python 3.12 environment that has `mlx_whisper` installed.".to_string(),
     )
+}
+
+fn resolve_dev_python() -> Option<PathBuf> {
+    [
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mlx-runtime/.venv/bin/python"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../api/.venv/bin/python"),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.exists())
 }
 
 fn ensure_bundled_python_runtime(
@@ -858,7 +865,7 @@ mod tests {
         let message =
             helper_error_message(b"ModuleNotFoundError: No module named 'mlx_whisper'", b"");
         assert!(message.contains("does not have `mlx_whisper` installed"));
-        assert!(message.contains("uv sync --project apps/api --extra dev"));
+        assert!(message.contains("uv sync --project apps/mlx-runtime --extra dev"));
         assert!(message.contains("TATOR_PYTHON_EXECUTABLE"));
     }
 

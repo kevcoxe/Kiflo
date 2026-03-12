@@ -12,9 +12,9 @@
     "dev:desktop": "npm run dev --workspace @tator/desktop",
     "release:prep": "node ./scripts/release-prep.mjs",
     "tauri:dev": "npm run tauri:dev --workspace @tator/desktop",
-    "test": "npm run test --workspace @tator/desktop && ./apps/api/.venv/bin/pytest apps/api/tests && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "test": "npm run test --workspace @tator/desktop && uv run --project apps/mlx-runtime --extra dev pytest apps/mlx-runtime/tests && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "test:desktop": "npm run test --workspace @tator/desktop",
-    "test:api": "./apps/api/.venv/bin/pytest apps/api/tests",
+    "test:python": "uv run --project apps/mlx-runtime --extra dev pytest apps/mlx-runtime/tests",
     "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
   }
 }
