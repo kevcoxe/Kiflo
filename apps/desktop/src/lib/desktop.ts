@@ -222,6 +222,18 @@ export async function onTrayToggleRecording(
   });
 }
 
+export async function onTrayModeChange(
+  handler: (mode: DictationMode) => void,
+): Promise<() => void> {
+  if (!isTauri()) {
+    return () => undefined;
+  }
+
+  return listen<DictationMode>("tray-mode-changed", (event) => {
+    handler(event.payload);
+  });
+}
+
 export function currentDesktopWindowLabel(): string {
   if (!isTauri()) {
     return "main";

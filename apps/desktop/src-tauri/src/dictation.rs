@@ -85,7 +85,7 @@ pub fn transcribe_audio(
 
 pub fn cleanup_text(raw_text: &str, mode: DictationMode, preserve_raw: bool) -> CleanupResponse {
     let text = normalize_text(raw_text, preserve_raw);
-    let clean_text = if matches!(mode, DictationMode::Notes | DictationMode::BulletList) {
+    let clean_text = if matches!(mode, DictationMode::BulletList) {
         format_bullets(&text).unwrap_or_else(|| format_sentence(&text, mode))
     } else {
         format_sentence(&text, mode)
@@ -242,13 +242,8 @@ fn mock_transcription(
             .unwrap_or_else(|| {
                 "hey can you send the update to rebekah tomorrow afternoon".to_string()
             }),
-        DictationMode::Email => {
-            "hi rebekah just following up on the timeline for next week".to_string()
-        }
         DictationMode::Chat => "running five minutes late be there soon".to_string(),
-        DictationMode::Notes | DictationMode::BulletList => {
-            "make a list eggs milk bread and apples".to_string()
-        }
+        DictationMode::BulletList => "make a list eggs milk bread and apples".to_string(),
     };
 
     TranscriptionResponse {

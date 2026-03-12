@@ -81,9 +81,7 @@ pub struct RecordedAudio {
 #[serde(rename_all = "snake_case")]
 pub enum DictationMode {
     Default,
-    Email,
     Chat,
-    Notes,
     BulletList,
 }
 

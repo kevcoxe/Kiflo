@@ -7,9 +7,7 @@ from pydantic import BaseModel, Field
 
 class DictationMode(StrEnum):
     DEFAULT = "default"
-    EMAIL = "email"
     CHAT = "chat"
-    NOTES = "notes"
     BULLET_LIST = "bullet_list"
 
 

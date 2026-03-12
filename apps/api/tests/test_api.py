@@ -63,7 +63,7 @@ def test_transcribe_returns_expected_shape() -> None:
 
     response = client.post(
         "/v1/transcribe",
-        data={"mode": "notes", "app_name": "Obsidian"},
+        data={"mode": "bullet_list", "app_name": "Obsidian"},
         files={"file": ("sample.wav", make_wav(750), "audio/wav")},
     )
 
@@ -82,7 +82,7 @@ def test_cleanup_formats_bullets() -> None:
         "/v1/cleanup",
         json={
             "raw_text": "make a list eggs milk bread and apples",
-            "mode": "notes",
+            "mode": "bullet_list",
             "app_name": "Obsidian",
         },
     )

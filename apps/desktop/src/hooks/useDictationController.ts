@@ -15,6 +15,7 @@ import {
   getFrontmostApp,
   getModelStatus,
   onTrayToggleRecording,
+  onTrayModeChange,
   getPermissionStatus,
   getSettings,
   hideHud,
@@ -184,11 +185,26 @@ export function useDictationController() {
   useEffect(() => {
     let disposed = false;
     let removeTrayToggleListener: () => void = () => undefined;
+    let removeTrayModeListener: () => void = () => undefined;
 
     async function bootstrap() {
       try {
         removeTrayToggleListener = await onTrayToggleRecording(() => {
           void toggleRecording();
+        });
+        removeTrayModeListener = await onTrayModeChange((nextMode) => {
+          const nextSettings = {
+            ...stateRef.current.settings,
+            preferredMode: nextMode,
+          };
+
+          stateRef.current = {
+            ...stateRef.current,
+            settings: nextSettings,
+            mode: nextMode,
+          };
+          setSettings(nextSettings);
+          setMode(nextMode);
         });
 
         const [loadedSettings, loadedPermissions, loadedHistory, loadedModelStatus] =
@@ -235,6 +251,7 @@ export function useDictationController() {
     return () => {
       disposed = true;
       removeTrayToggleListener();
+      removeTrayModeListener();
       void unregisterAllGlobalShortcuts();
     };
   }, []);
