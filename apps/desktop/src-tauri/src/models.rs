@@ -107,3 +107,33 @@ pub struct ModelStatus {
     pub progress: Option<f64>,
     pub error: Option<String>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HudPhase {
+    Hidden,
+    Recording,
+    Processing,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HudState {
+    pub visible: bool,
+    pub phase: HudPhase,
+}
+
+impl Default for HudState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            phase: HudPhase::Hidden,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HudMeterPayload {
+    pub level: f64,
+}
