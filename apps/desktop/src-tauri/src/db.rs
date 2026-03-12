@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS settings (
   interaction_mode TEXT NOT NULL DEFAULT 'hold',
   preferred_mode TEXT NOT NULL,
   save_history INTEGER NOT NULL,
-  hide_dock_icon INTEGER NOT NULL DEFAULT 0
+  hide_dock_icon INTEGER NOT NULL DEFAULT 0,
+  show_hud INTEGER NOT NULL DEFAULT 1
 );
 
 CREATE TABLE IF NOT EXISTS history (
@@ -55,7 +56,7 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
     let connection = open(path)?;
     connection
         .query_row(
-            "SELECT hotkey, auto_paste, pause_background_audio, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, save_history, hide_dock_icon
+            "SELECT hotkey, auto_paste, pause_background_audio, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, save_history, hide_dock_icon, show_hud
              FROM settings WHERE id = 1",
             [],
             |row| {
@@ -69,6 +70,7 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
                     preferred_mode: row.get(6)?,
                     save_history: row.get::<_, i64>(7)? != 0,
                     hide_dock_icon: row.get::<_, i64>(8)? != 0,
+                    show_hud: row.get::<_, i64>(9)? != 0,
                 })
             },
         )
@@ -160,9 +162,10 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 interaction_mode,
                 preferred_mode,
                 save_history,
-                hide_dock_icon
+                hide_dock_icon,
+                show_hud
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(id) DO UPDATE SET
                 hotkey = excluded.hotkey,
                 auto_paste = excluded.auto_paste,
@@ -172,7 +175,8 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 interaction_mode = excluded.interaction_mode,
                 preferred_mode = excluded.preferred_mode,
                 save_history = excluded.save_history,
-                hide_dock_icon = excluded.hide_dock_icon",
+                hide_dock_icon = excluded.hide_dock_icon,
+                show_hud = excluded.show_hud",
             params![
                 settings.hotkey,
                 bool_to_integer(settings.auto_paste),
@@ -183,6 +187,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 settings.preferred_mode,
                 bool_to_integer(settings.save_history),
                 bool_to_integer(settings.hide_dock_icon),
+                bool_to_integer(settings.show_hud),
             ],
         )
         .map_err(|error| error.to_string())?;
@@ -218,6 +223,12 @@ fn ensure_settings_columns(connection: &Connection) -> Result<(), String> {
         "settings",
         "hide_dock_icon",
         "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(
+        connection,
+        "settings",
+        "show_hud",
+        "INTEGER NOT NULL DEFAULT 1",
     )
 }
 
@@ -240,7 +251,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               interaction_mode TEXT NOT NULL DEFAULT 'hold',
               preferred_mode TEXT NOT NULL,
               save_history INTEGER NOT NULL,
-              hide_dock_icon INTEGER NOT NULL DEFAULT 0
+              hide_dock_icon INTEGER NOT NULL DEFAULT 0,
+              show_hud INTEGER NOT NULL DEFAULT 1
             );
             INSERT INTO settings_next (
               id,
@@ -252,7 +264,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               interaction_mode,
               preferred_mode,
               save_history,
-              hide_dock_icon
+              hide_dock_icon,
+              show_hud
             )
             SELECT
               id,
@@ -264,7 +277,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               COALESCE(interaction_mode, 'hold'),
               preferred_mode,
               save_history,
-              0
+              0,
+              1
             FROM settings;
             DROP TABLE settings;
             ALTER TABLE settings_next RENAME TO settings;
@@ -350,6 +364,7 @@ mod tests {
         settings.recording_cue_volume = 0;
         settings.save_history = false;
         settings.hide_dock_icon = true;
+        settings.show_hud = false;
 
         update_settings(&path, &settings).unwrap();
 
@@ -360,6 +375,7 @@ mod tests {
         assert_eq!(loaded.recording_cue_volume, 0);
         assert!(!loaded.save_history);
         assert!(loaded.hide_dock_icon);
+        assert!(!loaded.show_hud);
         assert!(!column_exists(&open(&path).unwrap(), "settings", "api_base_url").unwrap());
 
         let _ = fs::remove_file(path);
@@ -441,6 +457,7 @@ mod tests {
 
         let migrated = get_settings(&path).unwrap();
         assert_eq!(migrated.hotkey, "Option+Space");
+        assert!(migrated.show_hud);
         assert!(
             column_exists(&open(&path).unwrap(), "settings", "api_base_url")
                 .map(|exists| !exists)

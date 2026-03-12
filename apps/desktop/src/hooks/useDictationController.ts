@@ -17,10 +17,13 @@ import {
   onTrayToggleRecording,
   getPermissionStatus,
   getSettings,
+  hideHud,
   listHistory,
+  setHudPhase,
   registerGlobalShortcut,
   restoreClipboard,
   setClipboardText,
+  showHud,
   simulatePaste,
   startRecording,
   stopRecording,
@@ -52,6 +55,7 @@ const DEFAULT_SETTINGS: Settings = {
   preferredMode: "default",
   saveHistory: true,
   hideDockIcon: false,
+  showHud: true,
 };
 
 const DEFAULT_PERMISSIONS: PermissionStatus = {
@@ -65,6 +69,8 @@ const DEFAULT_MODEL_STATUS: ModelStatus = {
   progress: null,
   error: null,
 };
+
+const HUD_ERROR_FLASH_MS = 450;
 
 type ControllerState = {
   status: WorkflowStatus;
@@ -281,6 +287,14 @@ export function useDictationController() {
     };
   }, [initialized, settings.hotkey, settings.interactionMode]);
 
+  useEffect(() => {
+    if (!initialized || settings.showHud) {
+      return;
+    }
+
+    void safelyHideHud();
+  }, [initialized, settings.showHud]);
+
   async function refreshPermissions() {
     try {
       setPermissions(await getPermissionStatus());
@@ -318,12 +332,14 @@ export function useDictationController() {
       setFallbackText(null);
       setStatus("recording");
       await startRecording(stateRef.current.settings.pauseBackgroundAudio);
+      void safelyShowHud("recording");
       void playRecordingStartCue(stateRef.current.settings.recordingCueVolume);
       await refreshPermissions();
     } catch (startError) {
       stateRef.current.status = "error";
       setStatus("error");
       setError(describeError(startError, "Unable to start recording."));
+      void flashHudError();
     }
   }
 
@@ -332,6 +348,7 @@ export function useDictationController() {
     try {
       setStatus("processing");
       setError(null);
+      void safelySetHudPhase("processing");
 
       const activeState = stateRef.current;
       const audio = await stopRecording();
@@ -394,13 +411,17 @@ export function useDictationController() {
       });
 
       if (historyStatus === "inserted") {
+        void safelyHideHud();
         stateRef.current.status = "success";
         setStatus("success");
+      } else {
+        void flashHudError();
       }
     } catch (processingError) {
       stateRef.current.status = "error";
       setStatus("error");
       setError(describeError(processingError, "Unable to finish dictation."));
+      void flashHudError();
     } finally {
       await refreshPermissions();
       await refreshModelState();
@@ -498,6 +519,52 @@ export function useDictationController() {
       );
     } finally {
       await refreshModelState();
+    }
+  }
+
+  async function safelyShowHud(phase: "recording" | "processing" | "error") {
+    if (!stateRef.current.settings.showHud) {
+      return;
+    }
+
+    try {
+      await showHud(phase);
+    } catch {
+      // HUD failures should not block dictation.
+    }
+  }
+
+  async function safelySetHudPhase(phase: "recording" | "processing" | "error") {
+    if (!stateRef.current.settings.showHud) {
+      return;
+    }
+
+    try {
+      await setHudPhase(phase);
+    } catch {
+      // HUD failures should not block dictation.
+    }
+  }
+
+  async function safelyHideHud() {
+    try {
+      await hideHud();
+    } catch {
+      // HUD failures should not block dictation.
+    }
+  }
+
+  async function flashHudError() {
+    if (!stateRef.current.settings.showHud) {
+      return;
+    }
+
+    try {
+      await setHudPhase("error");
+      await pause(HUD_ERROR_FLASH_MS);
+      await hideHud();
+    } catch {
+      // HUD failures should not block dictation.
     }
   }
 

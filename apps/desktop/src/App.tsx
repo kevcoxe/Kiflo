@@ -122,7 +122,9 @@ export default function App() {
         </div>
         <div className="button-row">
           <button
-            className="primary-button"
+            className={`primary-button ${
+              controller.status === "processing" ? "is-processing" : ""
+            }`}
             disabled={!controller.initialized || controller.status === "processing"}
             onClick={() => {
               if (!isHoldMode) {
@@ -138,13 +140,20 @@ export default function App() {
             onPointerUp={handlePressStop}
             type="button"
           >
-            {isHoldMode
-              ? controller.status === "recording"
+            {controller.status === "processing" ? (
+              <>
+                <span aria-hidden="true" className="button-spinner" />
+                <span>Processing...</span>
+              </>
+            ) : isHoldMode ? (
+              controller.status === "recording"
                 ? "Release to Transcribe"
                 : "Hold to Record"
-              : controller.status === "recording"
-                ? "Stop Recording"
-                : "Start Recording"}
+            ) : controller.status === "recording" ? (
+              "Stop Recording"
+            ) : (
+              "Start Recording"
+            )}
           </button>
           <select
             className="mode-select"

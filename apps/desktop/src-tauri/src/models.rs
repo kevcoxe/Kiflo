@@ -12,6 +12,7 @@ pub struct Settings {
     pub preferred_mode: String,
     pub save_history: bool,
     pub hide_dock_icon: bool,
+    pub show_hud: bool,
 }
 
 impl Default for Settings {
@@ -26,6 +27,7 @@ impl Default for Settings {
             preferred_mode: "default".to_string(),
             save_history: true,
             hide_dock_icon: false,
+            show_hud: true,
         }
     }
 }
@@ -106,4 +108,34 @@ pub struct ModelStatus {
     pub downloading: bool,
     pub progress: Option<f64>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum HudPhase {
+    Hidden,
+    Recording,
+    Processing,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HudState {
+    pub visible: bool,
+    pub phase: HudPhase,
+}
+
+impl Default for HudState {
+    fn default() -> Self {
+        Self {
+            visible: false,
+            phase: HudPhase::Hidden,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct HudMeterPayload {
+    pub level: f64,
 }

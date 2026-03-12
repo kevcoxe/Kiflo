@@ -2,6 +2,7 @@
 
 mod db;
 mod dictation;
+mod hud;
 mod media;
 mod models;
 mod permissions;
@@ -9,9 +10,11 @@ mod recording;
 
 use std::{env, fs, path::PathBuf, sync::Mutex};
 
+use hud::{create_hud_window, hide_hud, set_hud_phase, show_hud};
 use models::{
-    CleanupResponse, ClipboardSnapshot, DictationMode, HistoryRecord, ModelStatus,
-    NewHistoryRecord, PermissionStatus, RecordedAudio, Settings, TranscriptionResponse,
+    CleanupResponse, ClipboardSnapshot, DictationMode, HistoryRecord, HudPhase, HudState,
+    ModelStatus, NewHistoryRecord, PermissionStatus, RecordedAudio, Settings,
+    TranscriptionResponse,
 };
 use tauri::{
     image::Image,
@@ -31,6 +34,7 @@ struct AppState {
     resource_dir: Option<PathBuf>,
     recording: Mutex<Option<recording::RecordingHandle>>,
     model_runtime: Mutex<dictation::ModelRuntimeState>,
+    hud_state: Mutex<HudState>,
 }
 
 impl AppState {
@@ -41,6 +45,7 @@ impl AppState {
             resource_dir,
             recording: Mutex::new(None),
             model_runtime: Mutex::new(dictation::ModelRuntimeState::default()),
+            hud_state: Mutex::new(HudState::default()),
         }
     }
 }
@@ -78,12 +83,14 @@ fn get_permission_status() -> PermissionStatus {
 
 #[tauri::command]
 fn start_recording(
+    app: AppHandle,
     state: State<'_, AppState>,
     pause_background_audio: Option<bool>,
 ) -> Result<(), String> {
     recording::start_recording(
         &state.inner().recording,
         pause_background_audio.unwrap_or(true),
+        &app,
     )
 }
 
@@ -170,6 +177,34 @@ fn simulate_paste() -> Result<(), String> {
 fn quit_app(app: AppHandle) -> Result<(), String> {
     app.exit(0);
     Ok(())
+}
+
+#[tauri::command]
+fn get_hud_state(state: State<'_, AppState>) -> Result<HudState, String> {
+    hud::get_hud_state(&state.inner().hud_state)
+}
+
+#[tauri::command]
+fn show_hud_command(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    phase: HudPhase,
+) -> Result<(), String> {
+    show_hud(&app, &state.inner().hud_state, phase)
+}
+
+#[tauri::command]
+fn set_hud_phase_command(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    phase: HudPhase,
+) -> Result<(), String> {
+    set_hud_phase(&app, &state.inner().hud_state, phase)
+}
+
+#[tauri::command]
+fn hide_hud_command(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    hide_hud(&app, &state.inner().hud_state)
 }
 
 fn show_main_window(app: &AppHandle) -> Result<(), String> {
@@ -297,6 +332,10 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .on_window_event(|window, event| {
+            if window.label() != "main" {
+                return;
+            }
+
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
@@ -313,6 +352,7 @@ fn main() {
             db::initialize(&database_path).map_err(std::io::Error::other)?;
             app.manage(AppState::new(database_path, app_data_dir, resource_dir));
             create_tray(&app.handle()).map_err(std::io::Error::other)?;
+            create_hud_window(&app.handle()).map_err(std::io::Error::other)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -333,6 +373,10 @@ fn main() {
             restore_clipboard,
             simulate_paste,
             quit_app,
+            get_hud_state,
+            show_hud_command,
+            set_hud_phase_command,
+            hide_hud_command,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tator desktop");

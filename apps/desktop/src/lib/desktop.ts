@@ -2,6 +2,7 @@ import { show } from "@tauri-apps/api/app";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   register,
   unregister,
@@ -38,6 +39,17 @@ function formatDesktopError(error: unknown): string {
   }
 
   return "Unknown desktop bridge error.";
+}
+
+export type HudPhase = "hidden" | "recording" | "processing" | "error";
+
+export interface HudState {
+  visible: boolean;
+  phase: HudPhase;
+}
+
+export interface HudMeterPayload {
+  level: number;
 }
 
 async function invokeDesktop<T>(command: string, args?: Record<string, unknown>) {
@@ -146,6 +158,24 @@ export async function quitApp(): Promise<void> {
   return invokeDesktop("quit_app");
 }
 
+export async function getHudState(): Promise<HudState> {
+  return invokeDesktop<HudState>("get_hud_state");
+}
+
+export async function showHud(phase: Exclude<HudPhase, "hidden">): Promise<void> {
+  return invokeDesktop("show_hud_command", { phase });
+}
+
+export async function setHudPhase(
+  phase: Exclude<HudPhase, "hidden">,
+): Promise<void> {
+  return invokeDesktop("set_hud_phase_command", { phase });
+}
+
+export async function hideHud(): Promise<void> {
+  return invokeDesktop("hide_hud_command");
+}
+
 export async function registerGlobalShortcut(
   shortcut: string,
   handlers: {
@@ -189,5 +219,37 @@ export async function onTrayToggleRecording(
 
   return listen("tray-toggle-recording", () => {
     handler();
+  });
+}
+
+export function currentDesktopWindowLabel(): string {
+  if (!isTauri()) {
+    return "main";
+  }
+
+  return getCurrentWebviewWindow().label;
+}
+
+export async function onHudStateChange(
+  handler: (state: HudState) => void,
+): Promise<() => void> {
+  if (!isTauri()) {
+    return () => undefined;
+  }
+
+  return listen<HudState>("hud-state-changed", (event) => {
+    handler(event.payload);
+  });
+}
+
+export async function onHudMeter(
+  handler: (payload: HudMeterPayload) => void,
+): Promise<() => void> {
+  if (!isTauri()) {
+    return () => undefined;
+  }
+
+  return listen<HudMeterPayload>("hud-meter", (event) => {
+    handler(event.payload);
   });
 }
