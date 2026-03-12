@@ -127,6 +127,16 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         />
         <span>Hide Dock icon after closing the window</span>
       </label>
+      <label className="toggle">
+        <input
+          checked={settings.showHud}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("showHud", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Show recording HUD overlay</span>
+      </label>
     </section>
   );
 }

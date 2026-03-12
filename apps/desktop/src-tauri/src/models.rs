@@ -12,6 +12,7 @@ pub struct Settings {
     pub preferred_mode: String,
     pub save_history: bool,
     pub hide_dock_icon: bool,
+    pub show_hud: bool,
 }
 
 impl Default for Settings {
@@ -26,6 +27,7 @@ impl Default for Settings {
             preferred_mode: "default".to_string(),
             save_history: true,
             hide_dock_icon: false,
+            show_hud: true,
         }
     }
 }

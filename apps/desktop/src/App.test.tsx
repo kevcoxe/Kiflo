@@ -13,6 +13,7 @@ const defaultSettings = {
   preferredMode: "default" as const,
   saveHistory: true,
   hideDockIcon: false,
+  showHud: true,
 };
 
 const defaultPermissions = {
@@ -233,6 +234,19 @@ describe("App", () => {
     });
   });
 
+  it("persists the HUD preference from settings", async () => {
+    render(<App />);
+
+    const checkbox = await screen.findByLabelText("Show recording HUD overlay");
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ showHud: false }),
+      );
+    });
+  });
+
   it("persists recording cue volume changes from the settings slider", async () => {
     render(<App />);
 
@@ -273,6 +287,30 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("Inserted")).toBeVisible();
     });
+  });
+
+  it("does not show the HUD when the setting is disabled", async () => {
+    vi.spyOn(desktop, "getSettings").mockResolvedValue({
+      ...defaultSettings,
+      showHud: false,
+    });
+
+    render(<App />);
+
+    const holdButton = await screen.findByRole("button", {
+      name: "Hold to Record",
+    });
+
+    fireEvent.mouseDown(holdButton);
+    fireEvent.mouseUp(await screen.findByRole("button", { name: "Release to Transcribe" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Inserted")).toBeVisible();
+    });
+
+    expect(desktop.showHud).not.toHaveBeenCalled();
+    expect(desktop.setHudPhase).not.toHaveBeenCalled();
+    expect(desktop.hideHud).toHaveBeenCalled();
   });
 
   it("offers a bundled model install action when the local model is missing", async () => {

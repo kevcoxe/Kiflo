@@ -55,6 +55,7 @@ const DEFAULT_SETTINGS: Settings = {
   preferredMode: "default",
   saveHistory: true,
   hideDockIcon: false,
+  showHud: true,
 };
 
 const DEFAULT_PERMISSIONS: PermissionStatus = {
@@ -286,6 +287,14 @@ export function useDictationController() {
     };
   }, [initialized, settings.hotkey, settings.interactionMode]);
 
+  useEffect(() => {
+    if (!initialized || settings.showHud) {
+      return;
+    }
+
+    void safelyHideHud();
+  }, [initialized, settings.showHud]);
+
   async function refreshPermissions() {
     try {
       setPermissions(await getPermissionStatus());
@@ -514,6 +523,10 @@ export function useDictationController() {
   }
 
   async function safelyShowHud(phase: "recording" | "processing" | "error") {
+    if (!stateRef.current.settings.showHud) {
+      return;
+    }
+
     try {
       await showHud(phase);
     } catch {
@@ -522,6 +535,10 @@ export function useDictationController() {
   }
 
   async function safelySetHudPhase(phase: "recording" | "processing" | "error") {
+    if (!stateRef.current.settings.showHud) {
+      return;
+    }
+
     try {
       await setHudPhase(phase);
     } catch {
@@ -538,6 +555,10 @@ export function useDictationController() {
   }
 
   async function flashHudError() {
+    if (!stateRef.current.settings.showHud) {
+      return;
+    }
+
     try {
       await setHudPhase("error");
       await pause(HUD_ERROR_FLASH_MS);
