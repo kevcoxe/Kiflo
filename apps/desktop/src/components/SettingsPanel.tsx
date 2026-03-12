@@ -22,7 +22,6 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
     <section className="panel">
       <div className="panel-header">
         <h2>Settings</h2>
-        <span>Stored locally in SQLite</span>
       </div>
       <label className="field">
         <span>Global shortcut</span>
