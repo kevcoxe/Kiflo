@@ -1,0 +1,23 @@
+[project]
+name = "tator-mlx-runtime"
+version = "0.1.0"
+description = "Python helper runtime dependencies for local MLX transcription in the Tator desktop app."
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "huggingface-hub>=0.32.0,<1.0.0",
+  "httpx>=0.28.0,<1.0.0",
+  "mlx>=0.31.0,<1.0.0",
+  "mlx-whisper>=0.4.3,<1.0.0",
+  "numpy>=2.2.0,<3.0.0"
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3.0,<9.0.0"
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.uv]
+package = false

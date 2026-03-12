@@ -13,6 +13,10 @@ apps/api/.pytest_cache/
 apps/api/.ruff_cache/
 apps/api/.coverage
 apps/api/htmlcov/
+apps/mlx-runtime/.pytest_cache/
+apps/mlx-runtime/.ruff_cache/
+apps/mlx-runtime/.coverage
+apps/mlx-runtime/htmlcov/
 *.db
 *.db-shm
 *.db-wal
