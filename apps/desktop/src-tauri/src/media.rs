@@ -1,15 +1,13 @@
 use enigo::{Direction, Enigo, Key, Keyboard, Settings};
 
 #[cfg(target_os = "macos")]
-use std::{mem, ptr::NonNull};
+use std::{
+    io::Write,
+    process::{Command, Stdio},
+};
 
 #[cfg(target_os = "macos")]
-use objc2_core_audio::{
-    kAudioDevicePropertyDeviceIsRunningSomewhere, kAudioHardwareNoError,
-    kAudioHardwarePropertyDefaultOutputDevice, kAudioObjectPropertyElementMain,
-    kAudioObjectPropertyScopeGlobal, kAudioObjectSystemObject, AudioObjectGetPropertyData,
-    AudioObjectID, AudioObjectPropertyAddress,
-};
+use serde::Deserialize;
 
 #[derive(Debug, Default)]
 pub struct MediaPlaybackInterruption {
@@ -40,25 +38,26 @@ impl MediaPlaybackInterruption {
             return Ok(());
         }
 
-        backend.toggle_play_pause()?;
+        backend.resume_playback()?;
         self.resume_required = false;
         Ok(())
     }
 }
 
 trait MediaPlaybackBackend {
-    fn is_output_active(&self) -> Result<bool, String>;
-    fn toggle_play_pause(&self) -> Result<(), String>;
+    fn is_media_playing(&self) -> Result<bool, String>;
+    fn pause_playback(&self) -> Result<(), String>;
+    fn resume_playback(&self) -> Result<(), String>;
 }
 
 fn begin_interruption<B: MediaPlaybackBackend>(
     backend: &B,
 ) -> Result<MediaPlaybackInterruption, String> {
-    if !backend.is_output_active()? {
+    if !backend.is_media_playing()? {
         return Ok(MediaPlaybackInterruption::default());
     }
 
-    backend.toggle_play_pause()?;
+    backend.pause_playback()?;
     Ok(MediaPlaybackInterruption {
         resume_required: true,
     })
@@ -67,81 +66,125 @@ fn begin_interruption<B: MediaPlaybackBackend>(
 struct SystemMediaPlaybackBackend;
 
 impl MediaPlaybackBackend for SystemMediaPlaybackBackend {
-    fn is_output_active(&self) -> Result<bool, String> {
-        is_output_audio_active()
+    fn is_media_playing(&self) -> Result<bool, String> {
+        is_media_playing()
     }
 
-    fn toggle_play_pause(&self) -> Result<(), String> {
+    fn pause_playback(&self) -> Result<(), String> {
+        pause_system_media()
+    }
+
+    fn resume_playback(&self) -> Result<(), String> {
+        resume_system_media()
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn is_media_playing() -> Result<bool, String> {
+    query_now_playing_state().map(|state| state.is_playing)
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "MediaRemote", kind = "framework")]
+unsafe extern "C" {
+    fn MRMediaRemoteSendCommand(command: i32, user_info: *const std::ffi::c_void) -> bool;
+}
+
+#[cfg(target_os = "macos")]
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct NowPlayingState {
+    is_playing: bool,
+}
+
+#[cfg(not(target_os = "macos"))]
+fn is_media_playing() -> Result<bool, String> {
+    Ok(false)
+}
+
+#[cfg(target_os = "macos")]
+fn query_now_playing_state() -> Result<NowPlayingState, String> {
+    const NOW_PLAYING_SCRIPT: &str = r#"
+function run() {
+  const MediaRemote = $.NSBundle.bundleWithPath("/System/Library/PrivateFrameworks/MediaRemote.framework/");
+  MediaRemote.load;
+
+  const MRNowPlayingRequest = $.NSClassFromString("MRNowPlayingRequest");
+  if (!MRNowPlayingRequest) {
+    return JSON.stringify({ isPlaying: false });
+  }
+
+  return JSON.stringify({
+    isPlaying: Boolean(MRNowPlayingRequest.localIsPlaying)
+  });
+}
+"#;
+
+    let mut child = Command::new("osascript")
+        .args(["-l", "JavaScript"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|error| format!("Unable to launch osascript for media state detection: {error}"))?;
+
+    child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| "osascript stdin was unavailable.".to_string())?
+        .write_all(NOW_PLAYING_SCRIPT.as_bytes())
+        .map_err(|error| format!("Unable to send media state script to osascript: {error}"))?;
+
+    let output = child
+        .wait_with_output()
+        .map_err(|error| format!("Unable to read osascript output: {error}"))?;
+
+    if !output.status.success() {
+        return Err(format!(
+            "osascript returned a non-zero exit code while detecting media playback: {}",
+            output.status
+        ));
+    }
+
+    serde_json::from_slice::<NowPlayingState>(&output.stdout)
+        .map_err(|error| format!("Unable to parse media playback state: {error}"))
+}
+
+#[cfg(target_os = "macos")]
+fn pause_system_media() -> Result<(), String> {
+    send_media_command(MediaRemoteCommand::Pause)
+}
+
+#[cfg(target_os = "macos")]
+fn resume_system_media() -> Result<(), String> {
+    send_media_command(MediaRemoteCommand::Play)
+}
+
+#[cfg(target_os = "macos")]
+fn send_media_command(command: MediaRemoteCommand) -> Result<(), String> {
+    let sent = unsafe { MRMediaRemoteSendCommand(command as i32, std::ptr::null()) };
+
+    if sent {
+        Ok(())
+    } else {
         toggle_media_playback()
     }
 }
 
-#[cfg(target_os = "macos")]
-fn is_output_audio_active() -> Result<bool, String> {
-    let default_output_device = read_audio_property::<AudioObjectID>(
-        kAudioObjectSystemObject as AudioObjectID,
-        AudioObjectPropertyAddress {
-            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain,
-        },
-    )?;
-
-    if default_output_device == 0 {
-        return Ok(false);
-    }
-
-    let is_running = read_audio_property::<u32>(
-        default_output_device,
-        AudioObjectPropertyAddress {
-            mSelector: kAudioDevicePropertyDeviceIsRunningSomewhere,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain,
-        },
-    )?;
-
-    Ok(is_running != 0)
-}
-
-#[cfg(target_os = "macos")]
-fn read_audio_property<T: Copy>(
-    object_id: AudioObjectID,
-    address: AudioObjectPropertyAddress,
-) -> Result<T, String> {
-    let mut value = mem::MaybeUninit::<T>::uninit();
-    let mut data_size = mem::size_of::<T>() as u32;
-    let status = unsafe {
-        AudioObjectGetPropertyData(
-            object_id,
-            NonNull::from(&address),
-            0,
-            std::ptr::null(),
-            NonNull::from(&mut data_size),
-            NonNull::new(value.as_mut_ptr().cast())
-                .ok_or_else(|| "Audio property pointer was null.".to_string())?,
-        )
-    };
-
-    if status != kAudioHardwareNoError {
-        return Err(format!(
-            "CoreAudio property lookup failed with status {status}."
-        ));
-    }
-
-    if data_size != mem::size_of::<T>() as u32 {
-        return Err(format!(
-            "CoreAudio property size mismatch. Expected {} bytes, received {} bytes.",
-            mem::size_of::<T>(),
-            data_size,
-        ));
-    }
-
-    Ok(unsafe { value.assume_init() })
+#[cfg(not(target_os = "macos"))]
+fn pause_system_media() -> Result<(), String> {
+    toggle_media_playback()
 }
 
 #[cfg(not(target_os = "macos"))]
-fn is_output_audio_active() -> Result<bool, String> {
-    Ok(false)
+fn resume_system_media() -> Result<(), String> {
+    toggle_media_playback()
+}
+
+#[cfg(target_os = "macos")]
+#[repr(i32)]
+enum MediaRemoteCommand {
+    Play = 0,
+    Pause = 1,
 }
 
 fn toggle_media_playback() -> Result<(), String> {
@@ -161,45 +204,64 @@ mod tests {
     use super::*;
 
     struct FakeMediaPlaybackBackend {
-        output_active: Result<bool, String>,
-        toggle_results: RefCell<VecDeque<Result<(), String>>>,
-        toggle_count: Cell<usize>,
+        media_playing: Result<bool, String>,
+        pause_results: RefCell<VecDeque<Result<(), String>>>,
+        resume_results: RefCell<VecDeque<Result<(), String>>>,
+        pause_count: Cell<usize>,
+        resume_count: Cell<usize>,
     }
 
     impl FakeMediaPlaybackBackend {
         fn active() -> Self {
             Self {
-                output_active: Ok(true),
-                toggle_results: RefCell::new(VecDeque::from([Ok(())])),
-                toggle_count: Cell::new(0),
+                media_playing: Ok(true),
+                pause_results: RefCell::new(VecDeque::from([Ok(())])),
+                resume_results: RefCell::new(VecDeque::from([Ok(())])),
+                pause_count: Cell::new(0),
+                resume_count: Cell::new(0),
             }
         }
 
         fn idle() -> Self {
             Self {
-                output_active: Ok(false),
-                toggle_results: RefCell::new(VecDeque::new()),
-                toggle_count: Cell::new(0),
+                media_playing: Ok(false),
+                pause_results: RefCell::new(VecDeque::new()),
+                resume_results: RefCell::new(VecDeque::new()),
+                pause_count: Cell::new(0),
+                resume_count: Cell::new(0),
             }
         }
 
-        fn with_toggle_results(toggle_results: Vec<Result<(), String>>) -> Self {
+        fn with_results(
+            pause_results: Vec<Result<(), String>>,
+            resume_results: Vec<Result<(), String>>,
+        ) -> Self {
             Self {
-                output_active: Ok(true),
-                toggle_results: RefCell::new(toggle_results.into()),
-                toggle_count: Cell::new(0),
+                media_playing: Ok(true),
+                pause_results: RefCell::new(pause_results.into()),
+                resume_results: RefCell::new(resume_results.into()),
+                pause_count: Cell::new(0),
+                resume_count: Cell::new(0),
             }
         }
     }
 
     impl MediaPlaybackBackend for FakeMediaPlaybackBackend {
-        fn is_output_active(&self) -> Result<bool, String> {
-            self.output_active.clone()
+        fn is_media_playing(&self) -> Result<bool, String> {
+            self.media_playing.clone()
         }
 
-        fn toggle_play_pause(&self) -> Result<(), String> {
-            self.toggle_count.set(self.toggle_count.get() + 1);
-            self.toggle_results
+        fn pause_playback(&self) -> Result<(), String> {
+            self.pause_count.set(self.pause_count.get() + 1);
+            self.pause_results
+                .borrow_mut()
+                .pop_front()
+                .unwrap_or(Ok(()))
+        }
+
+        fn resume_playback(&self) -> Result<(), String> {
+            self.resume_count.set(self.resume_count.get() + 1);
+            self.resume_results
                 .borrow_mut()
                 .pop_front()
                 .unwrap_or(Ok(()))
@@ -207,42 +269,46 @@ mod tests {
     }
 
     #[test]
-    fn begins_interruption_only_when_output_is_active() {
+    fn begins_interruption_only_when_media_is_playing() {
         let idle_backend = FakeMediaPlaybackBackend::idle();
         let idle_interruption = begin_interruption(&idle_backend).unwrap();
         assert!(!idle_interruption.resume_required);
-        assert_eq!(idle_backend.toggle_count.get(), 0);
+        assert_eq!(idle_backend.pause_count.get(), 0);
+        assert_eq!(idle_backend.resume_count.get(), 0);
 
         let active_backend = FakeMediaPlaybackBackend::active();
         let active_interruption = begin_interruption(&active_backend).unwrap();
         assert!(active_interruption.resume_required);
-        assert_eq!(active_backend.toggle_count.get(), 1);
+        assert_eq!(active_backend.pause_count.get(), 1);
+        assert_eq!(active_backend.resume_count.get(), 0);
     }
 
     #[test]
-    fn resume_only_toggles_once_after_a_successful_pause() {
-        let backend = FakeMediaPlaybackBackend::with_toggle_results(vec![Ok(()), Ok(())]);
+    fn resume_only_plays_once_after_a_successful_pause() {
+        let backend = FakeMediaPlaybackBackend::with_results(vec![Ok(())], vec![Ok(())]);
         let mut interruption = begin_interruption(&backend).unwrap();
 
         interruption.resume_with(&backend).unwrap();
         interruption.resume_with(&backend).unwrap();
 
-        assert_eq!(backend.toggle_count.get(), 2);
+        assert_eq!(backend.pause_count.get(), 1);
+        assert_eq!(backend.resume_count.get(), 1);
         assert!(!interruption.resume_required);
     }
 
     #[test]
-    fn resume_keeps_the_resume_flag_when_the_toggle_fails() {
-        let backend = FakeMediaPlaybackBackend::with_toggle_results(vec![
-            Ok(()),
-            Err("resume failed".to_string()),
-        ]);
+    fn resume_keeps_the_resume_flag_when_resume_fails() {
+        let backend = FakeMediaPlaybackBackend::with_results(
+            vec![Ok(())],
+            vec![Err("resume failed".to_string())],
+        );
         let mut interruption = begin_interruption(&backend).unwrap();
 
         let error = interruption.resume_with(&backend).unwrap_err();
 
         assert_eq!(error, "resume failed");
-        assert_eq!(backend.toggle_count.get(), 2);
+        assert_eq!(backend.pause_count.get(), 1);
+        assert_eq!(backend.resume_count.get(), 1);
         assert!(interruption.resume_required);
     }
 }
