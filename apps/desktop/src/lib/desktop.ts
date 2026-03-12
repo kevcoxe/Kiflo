@@ -234,6 +234,18 @@ export async function onTrayModeChange(
   });
 }
 
+export async function onTraySettingsChange(
+  handler: (settings: Settings) => void,
+): Promise<() => void> {
+  if (!isTauri()) {
+    return () => undefined;
+  }
+
+  return listen<Settings>("tray-settings-changed", (event) => {
+    handler(event.payload);
+  });
+}
+
 export function currentDesktopWindowLabel(): string {
   if (!isTauri()) {
     return "main";

@@ -16,6 +16,7 @@ import {
   getModelStatus,
   onTrayToggleRecording,
   onTrayModeChange,
+  onTraySettingsChange,
   getPermissionStatus,
   getSettings,
   hideHud,
@@ -186,6 +187,7 @@ export function useDictationController() {
     let disposed = false;
     let removeTrayToggleListener: () => void = () => undefined;
     let removeTrayModeListener: () => void = () => undefined;
+    let removeTraySettingsListener: () => void = () => undefined;
 
     async function bootstrap() {
       try {
@@ -206,6 +208,17 @@ export function useDictationController() {
           setSettings(nextSettings);
           setMode(nextMode);
         });
+        removeTraySettingsListener = await onTraySettingsChange(
+          (nextSettings) => {
+            stateRef.current = {
+              ...stateRef.current,
+              settings: nextSettings,
+              mode: nextSettings.preferredMode,
+            };
+            setSettings(nextSettings);
+            setMode(nextSettings.preferredMode);
+          },
+        );
 
         const [loadedSettings, loadedPermissions, loadedHistory, loadedModelStatus] =
           await Promise.all([
@@ -252,6 +265,7 @@ export function useDictationController() {
       disposed = true;
       removeTrayToggleListener();
       removeTrayModeListener();
+      removeTraySettingsListener();
       void unregisterAllGlobalShortcuts();
     };
   }, []);

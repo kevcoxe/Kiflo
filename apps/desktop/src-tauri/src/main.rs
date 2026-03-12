@@ -30,9 +30,16 @@ const MENU_ITEM_MODE_SUBMENU: &str = "mode-submenu";
 const MENU_ITEM_MODE_DEFAULT: &str = "mode-default";
 const MENU_ITEM_MODE_CHAT: &str = "mode-chat";
 const MENU_ITEM_MODE_LIST: &str = "mode-list";
+const MENU_ITEM_SETTINGS_SUBMENU: &str = "settings-submenu";
+const MENU_ITEM_PAUSE_BACKGROUND_AUDIO: &str = "pause-background-audio";
+const MENU_ITEM_SHOW_HUD: &str = "show-hud";
+const MENU_ITEM_INTERACTION_SUBMENU: &str = "interaction-submenu";
+const MENU_ITEM_INTERACTION_HOLD: &str = "interaction-hold";
+const MENU_ITEM_INTERACTION_TOGGLE: &str = "interaction-toggle";
 const MENU_ITEM_QUIT: &str = "quit";
 const TRAY_TOGGLE_RECORDING_EVENT: &str = "tray-toggle-recording";
 const TRAY_MODE_CHANGED_EVENT: &str = "tray-mode-changed";
+const TRAY_SETTINGS_CHANGED_EVENT: &str = "tray-settings-changed";
 
 struct AppState {
     database_path: PathBuf,
@@ -68,7 +75,7 @@ fn update_settings(
     settings: Settings,
 ) -> Result<Settings, String> {
     let saved = db::update_settings(state.inner().database_path.as_path(), &settings)?;
-    sync_tray_menu(&app, &saved.preferred_mode)?;
+    sync_tray_menu(&app, &saved)?;
     Ok(saved)
 }
 
@@ -251,7 +258,15 @@ fn tray_mode_menu_items(
     ])
 }
 
-fn build_tray_menu(app: &AppHandle, preferred_mode: &str) -> tauri::Result<Menu<tauri::Wry>> {
+fn interaction_mode_for_menu_item(menu_id: &str) -> Option<&'static str> {
+    match menu_id {
+        MENU_ITEM_INTERACTION_HOLD => Some("hold"),
+        MENU_ITEM_INTERACTION_TOGGLE => Some("toggle"),
+        _ => None,
+    }
+}
+
+fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<tauri::Wry>> {
     let open = MenuItem::with_id(app, MENU_ITEM_OPEN, "Open Tator", true, None::<&str>)?;
     let toggle = MenuItem::with_id(
         app,
@@ -260,7 +275,7 @@ fn build_tray_menu(app: &AppHandle, preferred_mode: &str) -> tauri::Result<Menu<
         true,
         None::<&str>,
     )?;
-    let [default_mode, chat_mode, list_mode] = tray_mode_menu_items(app, preferred_mode)?;
+    let [default_mode, chat_mode, list_mode] = tray_mode_menu_items(app, &settings.preferred_mode)?;
     let mode_menu = Submenu::with_id_and_items(
         app,
         MENU_ITEM_MODE_SUBMENU,
@@ -268,7 +283,54 @@ fn build_tray_menu(app: &AppHandle, preferred_mode: &str) -> tauri::Result<Menu<
         true,
         &[&default_mode, &chat_mode, &list_mode],
     )?;
+    let pause_background_audio = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_PAUSE_BACKGROUND_AUDIO,
+        "Pause Media",
+        true,
+        settings.pause_background_audio,
+        None::<&str>,
+    )?;
+    let show_hud = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_SHOW_HUD,
+        "Show HUD",
+        true,
+        settings.show_hud,
+        None::<&str>,
+    )?;
+    let interaction_hold = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_INTERACTION_HOLD,
+        "Hold",
+        true,
+        settings.interaction_mode == "hold",
+        None::<&str>,
+    )?;
+    let interaction_toggle = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_INTERACTION_TOGGLE,
+        "Toggle",
+        true,
+        settings.interaction_mode == "toggle",
+        None::<&str>,
+    )?;
+    let interaction_mode_menu = Submenu::with_id_and_items(
+        app,
+        MENU_ITEM_INTERACTION_SUBMENU,
+        "Shortcut Mode",
+        true,
+        &[&interaction_hold, &interaction_toggle],
+    )?;
+    let settings_menu = Submenu::with_id_and_items(
+        app,
+        MENU_ITEM_SETTINGS_SUBMENU,
+        "Settings",
+        true,
+        &[&pause_background_audio, &show_hud, &interaction_mode_menu],
+    )?;
     let separator_before_mode = PredefinedMenuItem::separator(app)?;
+    let separator_before_settings = PredefinedMenuItem::separator(app)?;
     let separator_before_quit = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, MENU_ITEM_QUIT, "Quit", true, None::<&str>)?;
 
@@ -279,6 +341,8 @@ fn build_tray_menu(app: &AppHandle, preferred_mode: &str) -> tauri::Result<Menu<
             &toggle,
             &separator_before_mode,
             &mode_menu,
+            &separator_before_settings,
+            &settings_menu,
             &separator_before_quit,
             &quit,
         ],
@@ -294,11 +358,11 @@ fn preferred_mode_for_menu_item(menu_id: &str) -> Option<&'static str> {
     }
 }
 
-fn sync_tray_menu(app: &AppHandle, preferred_mode: &str) -> Result<(), String> {
+fn sync_tray_menu(app: &AppHandle, settings: &Settings) -> Result<(), String> {
     let tray = app
         .tray_by_id(TRAY_ID)
         .ok_or_else(|| "Main tray icon is not available.".to_string())?;
-    let menu = build_tray_menu(app, preferred_mode).map_err(|error| error.to_string())?;
+    let menu = build_tray_menu(app, settings).map_err(|error| error.to_string())?;
     tray.set_menu(Some(menu)).map_err(|error| error.to_string())
 }
 
@@ -309,8 +373,23 @@ fn update_preferred_mode_from_tray(app: &AppHandle, preferred_mode: &str) -> Res
     let mut settings = db::get_settings(state.database_path.as_path())?;
     settings.preferred_mode = preferred_mode.to_string();
     let saved = db::update_settings(state.database_path.as_path(), &settings)?;
-    sync_tray_menu(app, &saved.preferred_mode)?;
+    sync_tray_menu(app, &saved)?;
     app.emit(TRAY_MODE_CHANGED_EVENT, saved.preferred_mode)
+        .map_err(|error| error.to_string())
+}
+
+fn update_setting_from_tray<F>(app: &AppHandle, mut updater: F) -> Result<(), String>
+where
+    F: FnMut(&mut Settings),
+{
+    let state = app
+        .try_state::<AppState>()
+        .ok_or_else(|| "App state is not available.".to_string())?;
+    let mut settings = db::get_settings(state.database_path.as_path())?;
+    updater(&mut settings);
+    let saved = db::update_settings(state.database_path.as_path(), &settings)?;
+    sync_tray_menu(app, &saved)?;
+    app.emit(TRAY_SETTINGS_CHANGED_EVENT, saved)
         .map_err(|error| error.to_string())
 }
 
@@ -377,12 +456,11 @@ fn tray_icon_image() -> Option<Image<'static>> {
 }
 
 fn create_tray(app: &AppHandle) -> tauri::Result<()> {
-    let preferred_mode = app
+    let settings = app
         .try_state::<AppState>()
         .and_then(|state| db::get_settings(state.database_path.as_path()).ok())
-        .map(|settings| settings.preferred_mode)
-        .unwrap_or_else(|| "default".to_string());
-    let menu = build_tray_menu(app, &preferred_mode)?;
+        .unwrap_or_default();
+    let menu = build_tray_menu(app, &settings)?;
 
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
@@ -398,9 +476,23 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             MENU_ITEM_QUIT => {
                 app.exit(0);
             }
+            MENU_ITEM_PAUSE_BACKGROUND_AUDIO => {
+                let _ = update_setting_from_tray(app, |settings| {
+                    settings.pause_background_audio = !settings.pause_background_audio;
+                });
+            }
+            MENU_ITEM_SHOW_HUD => {
+                let _ = update_setting_from_tray(app, |settings| {
+                    settings.show_hud = !settings.show_hud;
+                });
+            }
             menu_id => {
                 if let Some(preferred_mode) = preferred_mode_for_menu_item(menu_id) {
                     let _ = update_preferred_mode_from_tray(app, preferred_mode);
+                } else if let Some(interaction_mode) = interaction_mode_for_menu_item(menu_id) {
+                    let _ = update_setting_from_tray(app, |settings| {
+                        settings.interaction_mode = interaction_mode.to_string();
+                    });
                 }
             }
         });
