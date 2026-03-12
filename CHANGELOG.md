@@ -4,6 +4,12 @@ All notable changes to the shipped Tator desktop app are documented in this file
 
 The format is based on Keep a Changelog and adapted to this repository's tag-driven release workflow.
 
+## [0.1.6] - 2026-03-12
+
+### Changed
+- Fix media pause behavior during recording
+- Keep HUD above fullscreen apps
+
 ## [0.1.5] - 2026-03-12
 
 ### Changed
