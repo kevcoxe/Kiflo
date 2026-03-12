@@ -107,16 +107,7 @@ export default function App() {
 
   return (
     <main className="app-shell">
-      <section className="hero panel">
-        <div>
-          <p className="eyebrow">macOS dictation MVP</p>
-          <h1>Tator</h1>
-          <p className="lead">
-            {isHoldMode
-              ? `Hold ${controller.settings.hotkey} or the button below to record, then release to transcribe locally and paste the cleaned text back into the frontmost app.`
-              : `Toggle dictation with ${controller.settings.hotkey} or the button below, then let the local speech pipeline clean the text before it is pasted back into the frontmost app.`}
-          </p>
-        </div>
+      <section className="panel control-bar">
         <div className={`status-badge status-${controller.status}`}>
           {statusLabel(controller.status)}
         </div>
@@ -189,50 +180,6 @@ export default function App() {
           </dl>
         </section>
 
-        <section className="panel">
-          <div className="panel-header">
-            <h2>Speech model</h2>
-            <span>Local transcription runtime</span>
-          </div>
-          <div className="result-block">
-            <strong>Status</strong>
-            <p>
-              {controller.modelStatus.installed
-                ? "Installed and ready."
-                : controller.modelStatus.downloading
-                  ? "Installing bundled local speech model..."
-                  : "Bundled model not installed yet."}
-            </p>
-          </div>
-          {controller.modelStatus.error ? (
-            <p className="error-banner">{controller.modelStatus.error}</p>
-          ) : null}
-          {!controller.modelStatus.installed ? (
-            <button
-              className="primary-button"
-              disabled={controller.modelStatus.downloading}
-              onClick={() => void controller.downloadModel()}
-              type="button"
-            >
-              {controller.modelStatus.downloading ? "Installing..." : "Install Bundled Model"}
-            </button>
-          ) : null}
-        </section>
-
-        <section className="panel">
-          <div className="panel-header">
-            <h2>Last output</h2>
-            <span>Raw and cleaned text</span>
-          </div>
-          <div className="result-block">
-            <strong>Raw</strong>
-            <p>{controller.lastRawText ?? "Nothing captured yet."}</p>
-          </div>
-          <div className="result-block">
-            <strong>Clean</strong>
-            <p>{controller.lastCleanText ?? "Cleanup output will appear here."}</p>
-          </div>
-        </section>
       </section>
 
       {controller.error ? <p className="error-banner">{controller.error}</p> : null}

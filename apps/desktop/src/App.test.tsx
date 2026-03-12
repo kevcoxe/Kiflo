@@ -338,23 +338,4 @@ describe("App", () => {
     expect(desktop.hideHud).toHaveBeenCalled();
   });
 
-  it("offers a bundled model install action when the local model is missing", async () => {
-    vi.spyOn(desktop, "getModelStatus").mockResolvedValue({
-      installed: false,
-      downloading: false,
-      progress: null,
-      error: null,
-    });
-
-    render(<App />);
-
-    const button = await screen.findByRole("button", {
-      name: "Install Bundled Model",
-    });
-    fireEvent.click(button);
-
-    await waitFor(() => {
-      expect(desktop.downloadModel).toHaveBeenCalledTimes(1);
-    });
-  });
 });

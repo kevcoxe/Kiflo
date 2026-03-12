@@ -81,8 +81,6 @@ type ControllerState = {
   modelStatus: ModelStatus;
   mode: DictationMode;
   history: HistoryRecord[];
-  lastRawText: string | null;
-  lastCleanText: string | null;
   fallbackText: string | null;
   error: string | null;
   initialized: boolean;
@@ -135,8 +133,6 @@ export function useDictationController() {
   const [modelStatus, setModelStatus] = useState<ModelStatus>(DEFAULT_MODEL_STATUS);
   const [mode, setMode] = useState<DictationMode>(DEFAULT_SETTINGS.preferredMode);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
-  const [lastRawText, setLastRawText] = useState<string | null>(null);
-  const [lastCleanText, setLastCleanText] = useState<string | null>(null);
   const [fallbackText, setFallbackText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
@@ -148,8 +144,6 @@ export function useDictationController() {
     modelStatus,
     mode,
     history,
-    lastRawText,
-    lastCleanText,
     fallbackText,
     error,
     initialized,
@@ -163,8 +157,6 @@ export function useDictationController() {
       modelStatus,
       mode,
       history,
-      lastRawText,
-      lastCleanText,
       fallbackText,
       error,
       initialized,
@@ -174,8 +166,6 @@ export function useDictationController() {
     fallbackText,
     history,
     initialized,
-    lastCleanText,
-    lastRawText,
     modelStatus,
     mode,
     permissions,
@@ -408,9 +398,6 @@ export function useDictationController() {
         );
       }
 
-      setLastRawText(transcription.raw_text);
-      setLastCleanText(cleanup.clean_text);
-
       let historyStatus: NewHistoryRecord["status"] = "inserted";
 
       if (activeState.settings.autoPaste) {
@@ -606,8 +593,6 @@ export function useDictationController() {
     modelStatus,
     mode,
     history,
-    lastRawText,
-    lastCleanText,
     fallbackText,
     error,
     initialized,
