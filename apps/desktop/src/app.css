@@ -552,3 +552,56 @@ body.hud-window #root {
     flex: 1 1 14rem;
   }
 }
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 0.7rem;
+  margin-bottom: 0.9rem;
+}
+
+.metric-card {
+  border: 1px solid rgba(244, 239, 231, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.7rem;
+}
+
+.metric-card h3 {
+  margin: 0;
+  color: rgba(244, 239, 231, 0.65);
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.metric-card p {
+  margin: 0.4rem 0 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.word-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  list-style: none;
+  margin: 0.55rem 0 0;
+  padding: 0;
+}
+
+.word-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border-radius: 999px;
+  background: rgba(244, 239, 231, 0.08);
+  border: 1px solid rgba(244, 239, 231, 0.14);
+  padding: 0.28rem 0.58rem;
+  font-size: 0.85rem;
+}
+
+.word-chip em {
+  color: rgba(244, 239, 231, 0.66);
+  font-style: normal;
+}

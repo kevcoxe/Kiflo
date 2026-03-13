@@ -3,6 +3,7 @@ import type { KeyboardEvent, PointerEvent } from "react";
 import { useEffect, useState } from "react";
 import { FallbackPanel } from "@/components/FallbackPanel";
 import { HistoryList } from "@/components/HistoryList";
+import { MetricsDashboard } from "@/components/MetricsDashboard";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { useDictationController } from "@/hooks/useDictationController";
 
@@ -264,6 +265,7 @@ export default function App() {
         onChange={(nextSettings) => void controller.saveSettings(nextSettings)}
         settings={controller.settings}
       />
+      <MetricsDashboard metrics={controller.historyMetrics} />
       <HistoryList history={controller.history} />
     </main>
   );

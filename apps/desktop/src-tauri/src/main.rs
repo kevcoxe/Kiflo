@@ -12,8 +12,8 @@ use std::{env, fs, path::PathBuf, sync::Mutex, thread};
 
 use hud::{create_hud_window, hide_hud, set_hud_phase, show_hud};
 use models::{
-    CleanupResponse, ClipboardSnapshot, DictationMode, HistoryRecord, HudPhase, HudState,
-    ModelStatus, NewHistoryRecord, PermissionStatus, RecordedAudio, Settings,
+    CleanupResponse, ClipboardSnapshot, DictationMode, HistoryMetrics, HistoryRecord, HudPhase,
+    HudState, ModelStatus, NewHistoryRecord, PermissionStatus, RecordedAudio, Settings,
     TranscriptionResponse,
 };
 use tauri::{
@@ -109,6 +109,11 @@ fn create_history_record(
     record: NewHistoryRecord,
 ) -> Result<HistoryRecord, String> {
     db::create_history_record(state.inner().database_path.as_path(), &record)
+}
+
+#[tauri::command]
+fn get_history_metrics(state: State<'_, AppState>) -> Result<HistoryMetrics, String> {
+    db::history_metrics(state.inner().database_path.as_path(), 8)
 }
 
 #[tauri::command]
@@ -781,6 +786,7 @@ fn main() {
             update_settings,
             list_history,
             create_history_record,
+            get_history_metrics,
             get_permission_status,
             start_recording,
             stop_recording,

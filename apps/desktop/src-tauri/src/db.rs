@@ -4,7 +4,7 @@ use chrono::Utc;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
-use crate::models::{HistoryRecord, NewHistoryRecord, Settings};
+use crate::models::{HistoryMetrics, HistoryRecord, HistoryWordMetric, NewHistoryRecord, Settings};
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS settings (
@@ -166,6 +166,233 @@ pub fn create_history_record(
     Ok(history_record)
 }
 
+<<<<<<< ours
+<<<<<<< ours
+pub fn history_metrics(path: &Path, top_word_limit: u32) -> Result<HistoryMetrics, String> {
+    let connection = open(path)?;
+
+    let (total_sessions, total_speaking_time_ms): (i64, i64) = connection
+        .query_row(
+            "SELECT COUNT(*), COALESCE(SUM(audio_duration_ms), 0) FROM history",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|error| error.to_string())?;
+
+    let mut statement = connection
+        .prepare("SELECT raw_text FROM history")
+        .map_err(|error| error.to_string())?;
+
+    let rows = statement
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|error| error.to_string())?;
+
+    let mut word_counts = std::collections::HashMap::<String, i64>::new();
+
+    for row in rows {
+        let raw_text = row.map_err(|error| error.to_string())?;
+        for word in tokenize_words(&raw_text) {
+            *word_counts.entry(word).or_insert(0) += 1;
+        }
+    }
+
+    let total_words_spoken: i64 = word_counts.values().sum();
+    let average_words_per_session = if total_sessions > 0 {
+        total_words_spoken as f64 / total_sessions as f64
+    } else {
+        0.0
+    };
+
+    // 40 words per minute as a conservative baseline for average typing speed.
+    let estimated_typing_time_saved_ms = total_words_spoken * 1_500;
+
+    let mut top_words: Vec<HistoryWordMetric> = word_counts
+        .into_iter()
+        .map(|(word, count)| HistoryWordMetric { word, count })
+        .collect();
+    top_words.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.word.cmp(&right.word))
+    });
+    top_words.truncate(top_word_limit as usize);
+
+    Ok(HistoryMetrics {
+        total_sessions,
+        total_words_spoken,
+        total_speaking_time_ms,
+        estimated_typing_time_saved_ms,
+        average_words_per_session,
+        top_words,
+    })
+}
+
+fn tokenize_words(input: &str) -> Vec<String> {
+    input
+        .split(|character: char| !character.is_alphanumeric() && character != '\'')
+        .map(|piece| piece.trim_matches('\''))
+        .filter(|piece| !piece.is_empty())
+        .map(|piece| piece.to_lowercase())
+        .collect()
+}
+
+||||||| base
+=======
+pub fn history_metrics(path: &Path, top_word_limit: u32) -> Result<HistoryMetrics, String> {
+    let connection = open(path)?;
+
+    let (total_sessions, total_speaking_time_ms): (i64, i64) = connection
+        .query_row(
+            "SELECT COUNT(*), COALESCE(SUM(audio_duration_ms), 0) FROM history",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|error| error.to_string())?;
+
+    let mut statement = connection
+        .prepare("SELECT clean_text, status FROM history")
+        .map_err(|error| error.to_string())?;
+
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?;
+
+    let mut word_counts = std::collections::HashMap::<String, i64>::new();
+
+    for row in rows {
+        let (clean_text, status) = row.map_err(|error| error.to_string())?;
+        if !matches!(status.as_str(), "inserted" | "fallback") {
+            continue;
+        }
+
+        for word in tokenize_words(&clean_text) {
+            *word_counts.entry(word).or_insert(0) += 1;
+        }
+    }
+
+    let total_words_spoken: i64 = word_counts.values().sum();
+    let average_words_per_session = if total_sessions > 0 {
+        total_words_spoken as f64 / total_sessions as f64
+    } else {
+        0.0
+    };
+
+    // 40 words per minute as a conservative baseline for average typing speed.
+    let estimated_typing_time_saved_ms = total_words_spoken * 1_500;
+
+    let mut top_words: Vec<HistoryWordMetric> = word_counts
+        .into_iter()
+        .map(|(word, count)| HistoryWordMetric { word, count })
+        .collect();
+    top_words.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.word.cmp(&right.word))
+    });
+    top_words.truncate(top_word_limit as usize);
+
+    Ok(HistoryMetrics {
+        total_sessions,
+        total_words_spoken,
+        total_speaking_time_ms,
+        estimated_typing_time_saved_ms,
+        average_words_per_session,
+        top_words,
+    })
+}
+
+fn tokenize_words(input: &str) -> Vec<String> {
+    input
+        .split(|character: char| !character.is_alphanumeric() && character != '\'')
+        .map(|piece| piece.trim_matches('\''))
+        .filter(|piece| !piece.is_empty())
+        .map(|piece| piece.to_lowercase())
+        .collect()
+}
+
+>>>>>>> theirs
+||||||| base
+=======
+pub fn history_metrics(path: &Path, top_word_limit: u32) -> Result<HistoryMetrics, String> {
+    let connection = open(path)?;
+
+    let (total_sessions, total_speaking_time_ms): (i64, i64) = connection
+        .query_row(
+            "SELECT COUNT(*), COALESCE(SUM(audio_duration_ms), 0) FROM history",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|error| error.to_string())?;
+
+    let mut statement = connection
+        .prepare("SELECT clean_text, status FROM history")
+        .map_err(|error| error.to_string())?;
+
+    let rows = statement
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|error| error.to_string())?;
+
+    let mut word_counts = std::collections::HashMap::<String, i64>::new();
+
+    for row in rows {
+        let (clean_text, status) = row.map_err(|error| error.to_string())?;
+        if !matches!(status.as_str(), "inserted" | "fallback") {
+            continue;
+        }
+
+        for word in tokenize_words(&clean_text) {
+            *word_counts.entry(word).or_insert(0) += 1;
+        }
+    }
+
+    let total_words_spoken: i64 = word_counts.values().sum();
+    let average_words_per_session = if total_sessions > 0 {
+        total_words_spoken as f64 / total_sessions as f64
+    } else {
+        0.0
+    };
+
+    // 40 words per minute as a conservative baseline for average typing speed.
+    let estimated_typing_time_saved_ms = total_words_spoken * 1_500;
+
+    let mut top_words: Vec<HistoryWordMetric> = word_counts
+        .into_iter()
+        .map(|(word, count)| HistoryWordMetric { word, count })
+        .collect();
+    top_words.sort_by(|left, right| {
+        right
+            .count
+            .cmp(&left.count)
+            .then_with(|| left.word.cmp(&right.word))
+    });
+    top_words.truncate(top_word_limit as usize);
+
+    Ok(HistoryMetrics {
+        total_sessions,
+        total_words_spoken,
+        total_speaking_time_ms,
+        estimated_typing_time_saved_ms,
+        average_words_per_session,
+        top_words,
+    })
+}
+
+fn tokenize_words(input: &str) -> Vec<String> {
+    input
+        .split(|character: char| !character.is_alphanumeric() && character != '\'')
+        .map(|piece| piece.trim_matches('\''))
+        .filter(|piece| !piece.is_empty())
+        .map(|piece| piece.to_lowercase())
+        .collect()
+}
+
+>>>>>>> theirs
 fn save_settings_connection(connection: &Connection, settings: &Settings) -> Result<(), String> {
     connection
         .execute(
@@ -649,6 +876,8 @@ mod tests {
 
         let _ = fs::remove_file(path);
     }
+<<<<<<< ours
+<<<<<<< ours
 
     #[test]
     fn adds_auto_backtrack_column_for_existing_settings_tables() {
@@ -714,6 +943,50 @@ mod tests {
         let settings = get_settings(&path).unwrap();
         assert!(!settings.auto_backtrack);
         assert!(column_exists(&open(&path).unwrap(), "settings", "auto_backtrack").unwrap());
+
+        let _ = fs::remove_file(path);
+    }
+    #[test]
+    fn computes_history_metrics() {
+        let path = temp_db_path();
+        initialize(&path).unwrap();
+
+        create_history_record(
+            &path,
+            &NewHistoryRecord {
+                app_name: Some("TextEdit".to_string()),
+                mode: "default".to_string(),
+                audio_duration_ms: 1_000,
+                raw_text: "Hello hello world".to_string(),
+                clean_text: "Hello hello world".to_string(),
+                status: "inserted".to_string(),
+            },
+        )
+        .unwrap();
+        create_history_record(
+            &path,
+            &NewHistoryRecord {
+                app_name: Some("Slack".to_string()),
+                mode: "chat".to_string(),
+                audio_duration_ms: 500,
+                raw_text: "World of words".to_string(),
+                clean_text: "World of words".to_string(),
+                status: "inserted".to_string(),
+            },
+        )
+        .unwrap();
+
+        let metrics = history_metrics(&path, 3).unwrap();
+        assert_eq!(metrics.total_sessions, 2);
+        assert_eq!(metrics.total_words_spoken, 6);
+        assert_eq!(metrics.total_speaking_time_ms, 1_500);
+        assert_eq!(metrics.estimated_typing_time_saved_ms, 9_000);
+        assert_eq!(metrics.average_words_per_session, 3.0);
+        assert_eq!(metrics.top_words.len(), 3);
+        assert_eq!(metrics.top_words[0].word, "hello");
+        assert_eq!(metrics.top_words[0].count, 2);
+        assert_eq!(metrics.top_words[1].word, "world");
+        assert_eq!(metrics.top_words[1].count, 2);
 
         let _ = fs::remove_file(path);
     }

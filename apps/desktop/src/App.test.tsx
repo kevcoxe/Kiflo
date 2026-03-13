@@ -33,11 +33,22 @@ const defaultModelStatus = {
   error: null,
 };
 
+
+const defaultMetrics = {
+  totalSessions: 0,
+  totalWordsSpoken: 0,
+  totalSpeakingTimeMs: 0,
+  estimatedTypingTimeSavedMs: 0,
+  averageWordsPerSession: 0,
+  topWords: [],
+};
+
 function mockSuccessfulBootstrap() {
   vi.spyOn(desktop, "getSettings").mockResolvedValue(defaultSettings);
   vi.spyOn(desktop, "getPermissionStatus").mockResolvedValue(defaultPermissions);
   vi.spyOn(desktop, "getModelStatus").mockResolvedValue(defaultModelStatus);
   vi.spyOn(desktop, "downloadModel").mockResolvedValue(undefined);
+  vi.spyOn(desktop, "getHistoryMetrics").mockResolvedValue(defaultMetrics);
   vi.spyOn(desktop, "openAccessibilitySettings").mockResolvedValue(undefined);
   vi.spyOn(desktop, "openMicrophoneSettings").mockResolvedValue(undefined);
   vi.spyOn(desktop, "requestMicrophoneAccess").mockResolvedValue(undefined);
@@ -132,6 +143,7 @@ describe("App", () => {
     expect(
       screen.getAllByText("Hey, can you send the update tomorrow?").length,
     ).toBeGreaterThan(0);
+    expect(screen.getByRole("heading", { name: "Dictation metrics" })).toBeVisible();
   });
 
   it("shows an error banner when the API call fails", async () => {

@@ -12,6 +12,7 @@ import type {
   ClipboardSnapshot,
   CleanupResponse,
   DictationMode,
+  HistoryMetrics,
   HistoryRecord,
   ModelStatus,
   NewHistoryRecord,
@@ -82,6 +83,10 @@ export async function createHistoryRecord(
   record: NewHistoryRecord,
 ): Promise<HistoryRecord> {
   return invokeDesktop<HistoryRecord>("create_history_record", { record });
+}
+
+export async function getHistoryMetrics(): Promise<HistoryMetrics> {
+  return invokeDesktop<HistoryMetrics>("get_history_metrics");
 }
 
 export async function getPermissionStatus(): Promise<PermissionStatus> {

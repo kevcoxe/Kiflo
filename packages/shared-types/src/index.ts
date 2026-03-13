@@ -60,6 +60,20 @@ export interface NewHistoryRecord {
   status: HistoryStatus;
 }
 
+export interface HistoryWordMetric {
+  word: string;
+  count: number;
+}
+
+export interface HistoryMetrics {
+  totalSessions: number;
+  totalWordsSpoken: number;
+  totalSpeakingTimeMs: number;
+  estimatedTypingTimeSavedMs: number;
+  averageWordsPerSession: number;
+  topWords: HistoryWordMetric[];
+}
+
 export interface TranscriptionResponse {
   raw_text: string;
   language: string;

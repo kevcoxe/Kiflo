@@ -66,6 +66,24 @@ pub struct NewHistoryRecord {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct HistoryWordMetric {
+    pub word: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryMetrics {
+    pub total_sessions: i64,
+    pub total_words_spoken: i64,
+    pub total_speaking_time_ms: i64,
+    pub estimated_typing_time_saved_ms: i64,
+    pub average_words_per_session: f64,
+    pub top_words: Vec<HistoryWordMetric>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PermissionStatus {
     pub microphone: String,
     pub accessibility: String,

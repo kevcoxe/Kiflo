@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type {
   DictationMode,
+  HistoryMetrics,
   HistoryRecord,
   ModelStatus,
   NewHistoryRecord,
@@ -13,6 +14,7 @@ import {
   createHistoryRecord,
   downloadModel,
   getFrontmostApp,
+  getHistoryMetrics,
   getModelStatus,
   onTrayToggleRecording,
   onTrayModeChange,
@@ -82,6 +84,16 @@ const DEFAULT_MODEL_STATUS: ModelStatus = {
   error: null,
 };
 
+
+const DEFAULT_HISTORY_METRICS: HistoryMetrics = {
+  totalSessions: 0,
+  totalWordsSpoken: 0,
+  totalSpeakingTimeMs: 0,
+  estimatedTypingTimeSavedMs: 0,
+  averageWordsPerSession: 0,
+  topWords: [],
+};
+
 const HUD_ERROR_FLASH_MS = 450;
 const PERMISSION_REQUIRED_MESSAGE =
   "Grant microphone and accessibility permissions before recording.";
@@ -93,6 +105,7 @@ type ControllerState = {
   settings: Settings;
   permissions: PermissionStatus;
   modelStatus: ModelStatus;
+  historyMetrics: HistoryMetrics;
   mode: DictationMode;
   history: HistoryRecord[];
   fallbackText: string | null;
@@ -179,6 +192,7 @@ export function useDictationController() {
   const [modelStatus, setModelStatus] = useState<ModelStatus>(DEFAULT_MODEL_STATUS);
   const [mode, setMode] = useState<DictationMode>(DEFAULT_SETTINGS.preferredMode);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
+  const [historyMetrics, setHistoryMetrics] = useState<HistoryMetrics>(DEFAULT_HISTORY_METRICS);
   const [fallbackText, setFallbackText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
@@ -188,6 +202,7 @@ export function useDictationController() {
     settings,
     permissions,
     modelStatus,
+    historyMetrics,
     mode,
     history,
     fallbackText,
@@ -201,6 +216,7 @@ export function useDictationController() {
       settings,
       permissions,
       modelStatus,
+      historyMetrics,
       mode,
       history,
       fallbackText,
@@ -213,6 +229,7 @@ export function useDictationController() {
     history,
     initialized,
     modelStatus,
+    historyMetrics,
     mode,
     permissions,
     settings,
@@ -264,12 +281,13 @@ export function useDictationController() {
           void refreshPermissions();
         });
 
-        const [loadedSettings, loadedPermissions, loadedHistory, loadedModelStatus] =
+        const [loadedSettings, loadedPermissions, loadedHistory, loadedModelStatus, loadedMetrics] =
           await Promise.all([
             getSettings(),
             getPermissionStatus(),
             listHistory(8),
             getModelStatus().catch(() => DEFAULT_MODEL_STATUS),
+            getHistoryMetrics().catch(() => DEFAULT_HISTORY_METRICS),
           ]);
 
         if (disposed) {
@@ -281,6 +299,7 @@ export function useDictationController() {
           settings: loadedSettings,
           permissions: loadedPermissions,
           modelStatus: loadedModelStatus,
+          historyMetrics: loadedMetrics,
           mode: loadedSettings.preferredMode,
           history: loadedHistory,
           status: "idle",
@@ -290,6 +309,7 @@ export function useDictationController() {
         setMode(loadedSettings.preferredMode);
         setPermissions(loadedPermissions);
         setModelStatus(loadedModelStatus);
+        setHistoryMetrics(loadedMetrics);
         setHistory(loadedHistory);
         setStatus("idle");
         setInitialized(true);
@@ -425,7 +445,15 @@ export function useDictationController() {
     }
 
     const savedRecord = await createHistoryRecord(record);
+    const metrics = await getHistoryMetrics().catch(() => null);
     setHistory((current) => [savedRecord, ...current].slice(0, 8));
+    if (metrics) {
+      stateRef.current = {
+        ...stateRef.current,
+        historyMetrics: metrics,
+      };
+      setHistoryMetrics(metrics);
+    }
   }
 
   async function beginRecording() {
@@ -745,6 +773,7 @@ export function useDictationController() {
     settings,
     permissions,
     modelStatus,
+    historyMetrics,
     mode,
     history,
     fallbackText,
