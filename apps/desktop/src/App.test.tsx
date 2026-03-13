@@ -14,6 +14,7 @@ const defaultSettings = {
   restoreClipboard: true,
   interactionMode: "hold" as const,
   preferredMode: "default" as const,
+  customDictionary: "",
   saveHistory: true,
   hideDockIcon: false,
   showHud: true,
@@ -337,6 +338,26 @@ describe("App", () => {
     await waitFor(() => {
       expect(desktop.updateSettings).toHaveBeenCalledWith(
         expect.objectContaining({ showHud: false }),
+      );
+    });
+  });
+
+  it("persists custom dictionary replacements from settings", async () => {
+    render(<App />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Add word" }));
+    fireEvent.change(await screen.findByLabelText("Dictionary source 1"), {
+      target: { value: "Rebecca" },
+    });
+    fireEvent.change(await screen.findByLabelText("Dictionary replacement 1"), {
+      target: { value: "Rebekah" },
+    });
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({
+          customDictionary: "Rebecca => Rebekah",
+        }),
       );
     });
   });

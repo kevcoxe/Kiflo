@@ -63,6 +63,7 @@ const DEFAULT_SETTINGS: Settings = {
   restoreClipboard: true,
   interactionMode: "hold",
   preferredMode: "default",
+  customDictionary: "",
   saveHistory: true,
   hideDockIcon: false,
   showHud: true,

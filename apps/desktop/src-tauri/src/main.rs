@@ -152,16 +152,19 @@ fn transcribe_audio(
 
 #[tauri::command]
 fn cleanup_text(
+    state: State<'_, AppState>,
     raw_text: String,
     mode: DictationMode,
     app_name: Option<String>,
     preserve_raw: Option<bool>,
 ) -> Result<CleanupResponse, String> {
+    let settings = db::get_settings(state.inner().database_path.as_path())?;
     let _ = app_name;
     Ok(dictation::cleanup_text(
         &raw_text,
         mode,
         preserve_raw.unwrap_or(false),
+        &settings.custom_dictionary,
     ))
 }
 

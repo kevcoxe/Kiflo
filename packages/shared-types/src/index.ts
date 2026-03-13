@@ -33,6 +33,7 @@ export interface Settings {
   restoreClipboard: boolean;
   interactionMode: RecordingInteractionMode;
   preferredMode: DictationMode;
+  customDictionary: string;
   saveHistory: boolean;
   hideDockIcon: boolean;
   showHud: boolean;

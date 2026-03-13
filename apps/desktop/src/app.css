@@ -256,6 +256,67 @@ body.hud-window #root {
   gap: 0.35rem;
 }
 
+.field-help {
+  margin: 0;
+}
+
+.dictionary-table-wrap {
+  overflow-x: auto;
+}
+
+.dictionary-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dictionary-table th,
+.dictionary-table td {
+  padding: 0.45rem 0;
+  text-align: left;
+  vertical-align: top;
+}
+
+.dictionary-table th {
+  color: rgba(244, 239, 231, 0.62);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.dictionary-table td + td,
+.dictionary-table th + th {
+  padding-left: 0.7rem;
+}
+
+.dictionary-table input {
+  width: 100%;
+  border-radius: 14px;
+  border: 1px solid rgba(244, 239, 231, 0.15);
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  padding: 0.8rem 1rem;
+}
+
+.dictionary-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: 0.35rem;
+}
+
+.dictionary-row-actions {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.dictionary-row-actions .secondary-button {
+  border-color: rgba(217, 72, 72, 0.28);
+  background: rgba(217, 72, 72, 0.14);
+  color: #ffcece;
+}
+
+.dictionary-empty {
+  padding: 0.9rem 0;
+}
+
 .field + .field,
 .toggle + .toggle,
 .field + .toggle,

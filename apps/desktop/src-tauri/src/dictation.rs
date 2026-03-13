@@ -268,8 +268,13 @@ pub fn transcribe_audio(
     }
 }
 
-pub fn cleanup_text(raw_text: &str, mode: DictationMode, preserve_raw: bool) -> CleanupResponse {
-    let text = normalize_text(raw_text, preserve_raw);
+pub fn cleanup_text(
+    raw_text: &str,
+    mode: DictationMode,
+    preserve_raw: bool,
+    custom_dictionary: &str,
+) -> CleanupResponse {
+    let text = apply_custom_dictionary(&normalize_text(raw_text, preserve_raw), custom_dictionary);
     let clean_text = if matches!(mode, DictationMode::BulletList) {
         format_bullets(&text).unwrap_or_else(|| format_sentence(&text, mode))
     } else {
@@ -630,6 +635,94 @@ fn normalize_text(raw_text: &str, preserve_raw: bool) -> String {
     collapse_whitespace(&cleaned.join(" "))
         .trim_matches(|character| character == ' ' || character == ',')
         .to_string()
+}
+
+fn apply_custom_dictionary(text: &str, custom_dictionary: &str) -> String {
+    parse_custom_dictionary(custom_dictionary)
+        .into_iter()
+        .fold(text.to_string(), |current, entry| {
+            replace_phrase_case_insensitive(&current, &entry.from, &entry.to)
+        })
+}
+
+fn parse_custom_dictionary(custom_dictionary: &str) -> Vec<DictionaryEntry> {
+    custom_dictionary
+        .lines()
+        .filter_map(parse_dictionary_entry)
+        .collect()
+}
+
+fn parse_dictionary_entry(line: &str) -> Option<DictionaryEntry> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() || trimmed.starts_with('#') {
+        return None;
+    }
+
+    let (from, to) = trimmed
+        .split_once("=>")
+        .or_else(|| trimmed.split_once("->"))
+        .or_else(|| trimmed.split_once('='))?;
+
+    let from = collapse_whitespace(from).trim().to_string();
+    let to = collapse_whitespace(to).trim().to_string();
+    if from.is_empty() || to.is_empty() {
+        return None;
+    }
+
+    Some(DictionaryEntry { from, to })
+}
+
+fn replace_phrase_case_insensitive(text: &str, from: &str, to: &str) -> String {
+    if from.is_empty() {
+        return text.to_string();
+    }
+
+    let mut result = String::with_capacity(text.len());
+    let mut index = 0;
+
+    while index < text.len() {
+        if phrase_matches_at(text, index, from) {
+            result.push_str(to);
+            index += from.len();
+            continue;
+        }
+
+        let character = text[index..]
+            .chars()
+            .next()
+            .expect("index always points to a valid character boundary");
+        result.push(character);
+        index += character.len_utf8();
+    }
+
+    result
+}
+
+fn phrase_matches_at(text: &str, index: usize, from: &str) -> bool {
+    let Some(candidate) = text.get(index..index + from.len()) else {
+        return false;
+    };
+
+    if !candidate.eq_ignore_ascii_case(from) {
+        return false;
+    }
+
+    let previous = text[..index].chars().next_back();
+    let next = text[index + from.len()..].chars().next();
+
+    is_dictionary_boundary(previous) && is_dictionary_boundary(next)
+}
+
+fn is_dictionary_boundary(character: Option<char>) -> bool {
+    character
+        .map(|value| !value.is_alphanumeric())
+        .unwrap_or(true)
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct DictionaryEntry {
+    from: String,
+    to: String,
 }
 
 fn format_bullets(text: &str) -> Option<String> {
@@ -1182,6 +1275,7 @@ mod tests {
             "um can you send the update tomorrow",
             DictationMode::Default,
             false,
+            "",
         );
         assert_eq!(result.clean_text, "Can you send the update tomorrow?");
     }
@@ -1192,6 +1286,7 @@ mod tests {
             "running five minutes late be there soon",
             DictationMode::Chat,
             false,
+            "",
         );
         assert_eq!(
             result.clean_text,
@@ -1205,20 +1300,46 @@ mod tests {
             "make a list eggs milk bread and apples",
             DictationMode::BulletList,
             false,
+            "",
         );
         assert_eq!(result.clean_text, "- Eggs\n- Milk\n- Bread\n- Apples");
     }
 
     #[test]
     fn cleanup_preserves_raw_text_when_requested() {
-        let result = cleanup_text(" um hello there ", DictationMode::Default, true);
+        let result = cleanup_text(" um hello there ", DictationMode::Default, true, "");
         assert_eq!(result.clean_text, "Um hello there.");
     }
 
     #[test]
     fn cleanup_can_return_empty_text_for_empty_input() {
-        let result = cleanup_text("   ", DictationMode::Default, false);
+        let result = cleanup_text("   ", DictationMode::Default, false, "");
         assert_eq!(result.clean_text, "");
+    }
+
+    #[test]
+    fn cleanup_applies_custom_dictionary_replacements() {
+        let result = cleanup_text(
+            "send the update to rebecca tomorrow",
+            DictationMode::Default,
+            false,
+            "Rebecca => Rebekah",
+        );
+        assert_eq!(result.clean_text, "Send the update to Rebekah tomorrow.");
+    }
+
+    #[test]
+    fn cleanup_replaces_whole_phrases_only() {
+        let result = cleanup_text(
+            "rebecca told rebeccas about new york city hall",
+            DictationMode::Default,
+            false,
+            "Rebecca => Rebekah\nnew york => NYC",
+        );
+        assert_eq!(
+            result.clean_text,
+            "Rebekah told rebeccas about NYC city hall."
+        );
     }
 
     #[test]
