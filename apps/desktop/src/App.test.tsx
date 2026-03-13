@@ -345,6 +345,22 @@ describe("App", () => {
     expect(screen.queryByRole("button", { name: "Request Accessibility Access" })).toBeNull();
   });
 
+  it("collapses the permissions panel when both permissions are granted", async () => {
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Hold to Record" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Show permissions details" })).toBeVisible();
+    expect(
+      screen.getByText("Microphone and accessibility access are granted."),
+    ).toBeVisible();
+    expect(screen.queryByText("Microphone")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show permissions details" }));
+
+    expect(await screen.findByText("Microphone")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Hide permissions details" })).toBeVisible();
+  });
+
   it("refreshes permissions when the app regains focus and clears the permissions gate", async () => {
     let focusHandler: ((focused: boolean) => void) | undefined;
 
@@ -373,6 +389,7 @@ describe("App", () => {
       ).not.toBeInTheDocument();
     });
     expect(screen.getByRole("button", { name: "Hold to Record" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Show permissions details" })).toBeVisible();
   });
 
   it("refreshes permissions when the app regains focus and shows revoked access", async () => {

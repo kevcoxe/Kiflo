@@ -1,5 +1,6 @@
 import { DICTATION_MODES } from "@tator/shared-types";
 import type { KeyboardEvent, PointerEvent } from "react";
+import { useEffect, useState } from "react";
 import { FallbackPanel } from "@/components/FallbackPanel";
 import { HistoryList } from "@/components/HistoryList";
 import { SettingsPanel } from "@/components/SettingsPanel";
@@ -28,8 +29,16 @@ export default function App() {
   const microphoneGranted = controller.permissions.microphone === "granted";
   const accessibilityGranted = controller.permissions.accessibility === "granted";
   const permissionsReady = microphoneGranted && accessibilityGranted;
+  const [permissionsExpanded, setPermissionsExpanded] = useState(false);
+  const permissionsCollapsed = permissionsReady && !permissionsExpanded;
   const recordButtonDisabled =
     !controller.initialized || controller.status === "processing" || !permissionsReady;
+
+  useEffect(() => {
+    if (!permissionsReady) {
+      setPermissionsExpanded(false);
+    }
+  }, [permissionsReady]);
 
   function handlePressStart(event: PointerEvent<HTMLButtonElement>) {
     if (!isHoldMode) {
@@ -170,56 +179,75 @@ export default function App() {
       <section className="panel">
         <div className="panel-header">
           <h2>Permissions</h2>
+          {permissionsReady ? (
+            <button
+              aria-controls="permissions-panel-body"
+              aria-expanded={!permissionsCollapsed}
+              className="panel-toggle"
+              onClick={() => setPermissionsExpanded((current) => !current)}
+              type="button"
+            >
+              {permissionsCollapsed ? "Show permissions details" : "Hide permissions details"}
+            </button>
+          ) : null}
         </div>
-        <dl className="permission-grid">
-          <div>
-            <dt>Microphone</dt>
-            <dd>{controller.permissions.microphone}</dd>
+        {permissionsCollapsed ? (
+          <p className="muted permissions-summary">
+            Microphone and accessibility access are granted.
+          </p>
+        ) : (
+          <div id="permissions-panel-body">
+            <dl className="permission-grid">
+              <div>
+                <dt>Microphone</dt>
+                <dd>{controller.permissions.microphone}</dd>
+              </div>
+              <div>
+                <dt>Accessibility</dt>
+                <dd>{controller.permissions.accessibility}</dd>
+              </div>
+            </dl>
+            {!permissionsReady ? (
+              <div className="result-block permissions-callout">
+                <div className="permissions-copy">
+                  <strong>Permissions required to continue</strong>
+                  <p>
+                    Grant microphone and accessibility access before using dictation.
+                    Open the relevant macOS privacy panes, then refresh once access has
+                    been granted.
+                  </p>
+                </div>
+                <div className="permissions-actions">
+                  {microphoneGranted ? null : (
+                    <button
+                      className="primary-button"
+                      onClick={() => void controller.openMicrophoneSystemSettings()}
+                      type="button"
+                    >
+                      Open Microphone Settings
+                    </button>
+                  )}
+                  {accessibilityGranted ? null : (
+                    <button
+                      className="primary-button"
+                      onClick={() => void controller.openAccessibilitySystemSettings()}
+                      type="button"
+                    >
+                      Open Accessibility Settings
+                    </button>
+                  )}
+                  <button
+                    className="mode-select"
+                    onClick={() => void controller.refreshPermissions()}
+                    type="button"
+                  >
+                    Refresh Permissions
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
-          <div>
-            <dt>Accessibility</dt>
-            <dd>{controller.permissions.accessibility}</dd>
-          </div>
-        </dl>
-        {!permissionsReady ? (
-          <div className="result-block permissions-callout">
-            <div className="permissions-copy">
-              <strong>Permissions required to continue</strong>
-              <p>
-                Grant microphone and accessibility access before using dictation. Open
-                the relevant macOS privacy panes, then refresh once access has been
-                granted.
-              </p>
-            </div>
-            <div className="permissions-actions">
-              {microphoneGranted ? null : (
-                <button
-                  className="primary-button"
-                  onClick={() => void controller.openMicrophoneSystemSettings()}
-                  type="button"
-                >
-                  Open Microphone Settings
-                </button>
-              )}
-              {accessibilityGranted ? null : (
-                <button
-                  className="primary-button"
-                  onClick={() => void controller.openAccessibilitySystemSettings()}
-                  type="button"
-                >
-                  Open Accessibility Settings
-                </button>
-              )}
-              <button
-                className="mode-select"
-                onClick={() => void controller.refreshPermissions()}
-                type="button"
-              >
-                Refresh Permissions
-              </button>
-            </div>
-          </div>
-        ) : null}
+        )}
       </section>
 
       {controller.error ? <p className="error-banner">{controller.error}</p> : null}
