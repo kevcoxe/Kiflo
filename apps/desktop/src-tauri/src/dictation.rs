@@ -954,6 +954,12 @@ fn helper_error_message(stderr: &[u8], stdout: &[u8]) -> String {
         return "The packaged MLX runtime is incomplete. Rebuild the desktop app so `Contents/Resources/runtime` includes the Hugging Face client dependencies required by `mlx_whisper`.".to_string();
     }
 
+    if combined.contains("Library not loaded:")
+        && (combined.contains("Python.framework") || combined.contains("libpython3.12.dylib"))
+    {
+        return "The packaged Python runtime could not be relocated on this machine. Reinstall Tator from a build that includes the updated bundled runtime, or temporarily set `TATOR_PYTHON_EXECUTABLE` to a local Python 3.12 environment with `mlx_whisper` installed.".to_string();
+    }
+
     if !stderr.is_empty() {
         stderr
     } else if !stdout.is_empty() {
@@ -1217,5 +1223,15 @@ mod tests {
         let message = helper_error_message(b"ModuleNotFoundError: No module named 'httpx'", b"");
         assert!(message.contains("runtime is incomplete"));
         assert!(message.contains("Contents/Resources/runtime"));
+    }
+
+    #[test]
+    fn helper_error_message_maps_dyld_python_failures_to_reinstall_guidance() {
+        let message = helper_error_message(
+            b"dyld: Library not loaded: /Library/Frameworks/Python.framework/Versions/3.12/Python",
+            b"",
+        );
+        assert!(message.contains("packaged Python runtime could not be relocated"));
+        assert!(message.contains("TATOR_PYTHON_EXECUTABLE"));
     }
 }
