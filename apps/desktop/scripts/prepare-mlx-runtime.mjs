@@ -20,12 +20,13 @@ import { fileURLToPath } from "node:url";
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const desktopDir = path.resolve(scriptDir, "..");
 const repoRoot = path.resolve(desktopDir, "..", "..");
-const RUNTIME_FORMAT_VERSION = 2;
+const RUNTIME_FORMAT_VERSION = 3;
 const runtimeVenvCandidates = [
   path.join(repoRoot, "apps", "mlx-runtime", ".venv"),
   path.join(repoRoot, "apps", "api", ".venv"),
 ];
 const outputDir = path.join(desktopDir, "src-tauri", "target", "bundled-runtime");
+const PORTABLE_PYTHON_HOME_ENTRIES = ["bin", "include", "lib", "share"];
 
 const REQUIRED_SITE_PACKAGE_PATTERNS = [
   "81d243bd2c585b0f4821__mypyc.cpython-*.so",
@@ -111,6 +112,18 @@ function resolveRuntimeVenvDir() {
     ?? runtimeVenvCandidates[0];
 }
 
+function resolveRuntimePythonExecutable() {
+  const runtimeVenvDir = resolveRuntimeVenvDir();
+  for (const executableName of ["python", "python3", "python3.12"]) {
+    const candidate = path.join(runtimeVenvDir, "bin", executableName);
+    if (existsSync(candidate)) {
+      return candidate;
+    }
+  }
+
+  fail(`Could not find a Python executable under ${path.join(runtimeVenvDir, "bin")}.`);
+}
+
 function readPythonHome() {
   const runtimeVenvDir = resolveRuntimeVenvDir();
   const pyvenvCfgPath = path.join(runtimeVenvDir, "pyvenv.cfg");
@@ -126,10 +139,16 @@ function readPythonHome() {
     .map((line) => line.trim())
     .find((line) => line.startsWith("home = "));
   if (!homeLine) {
-    fail(`Could not determine Python home from ${pyvenvCfgPath}.`);
+    fail(`Could not determine the base Python installation from ${pyvenvCfgPath}.`);
   }
 
-  return path.dirname(homeLine.slice("home = ".length));
+  const runtimePython = resolveRuntimePythonExecutable();
+  const basePrefix = runTool(runtimePython, ["-c", "import sys; print(sys.base_prefix)"]).trim();
+  if (!basePrefix) {
+    fail(`Could not determine sys.base_prefix using ${runtimePython}.`);
+  }
+
+  return basePrefix;
 }
 
 function readPythonVersion() {
@@ -184,6 +203,21 @@ function copySelectedSitePackages(sitePackagesDir, destinationDir) {
         recursive: true,
       });
     }
+  }
+}
+
+function copyPortablePythonHome(sourceDir, destinationDir) {
+  mkdirSync(destinationDir, { recursive: true });
+
+  for (const entry of PORTABLE_PYTHON_HOME_ENTRIES) {
+    const sourcePath = path.join(sourceDir, entry);
+    if (!existsSync(sourcePath)) {
+      fail(`Python home at ${sourceDir} is missing required entry \`${entry}\`.`);
+    }
+
+    cpSync(sourcePath, path.join(destinationDir, entry), {
+      recursive: true,
+    });
   }
 }
 
@@ -308,9 +342,7 @@ function main() {
   });
   mkdirSync(outputDir, { recursive: true });
 
-  cpSync(pythonHome, path.join(outputDir, "python-home"), {
-    recursive: true,
-  });
+  copyPortablePythonHome(pythonHome, path.join(outputDir, "python-home"));
   relocateBundledPython(outputDir, pythonVersion);
 
   const bundledSitePackagesDir = path.join(outputDir, "site-packages");
