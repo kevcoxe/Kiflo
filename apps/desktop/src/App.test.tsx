@@ -45,6 +45,7 @@ function mockSuccessfulBootstrap() {
   vi.spyOn(desktop, "unregisterAllGlobalShortcuts").mockResolvedValue(undefined);
   vi.spyOn(desktop, "onTrayToggleRecording").mockResolvedValue(() => undefined);
   vi.spyOn(desktop, "onTrayModeChange").mockResolvedValue(() => undefined);
+  vi.spyOn(desktop, "onCurrentWindowFocusChange").mockResolvedValue(() => undefined);
   vi.spyOn(desktop, "showMainWindow").mockResolvedValue(undefined);
   vi.spyOn(desktop, "quitApp").mockResolvedValue(undefined);
   vi.spyOn(desktop, "getHudState").mockResolvedValue({
@@ -342,6 +343,64 @@ describe("App", () => {
 
     expect(screen.queryByRole("button", { name: "Request Microphone Access" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Request Accessibility Access" })).toBeNull();
+  });
+
+  it("refreshes permissions when the app regains focus and clears the permissions gate", async () => {
+    let focusHandler: ((focused: boolean) => void) | undefined;
+
+    vi.spyOn(desktop, "onCurrentWindowFocusChange").mockImplementation(async (handler) => {
+      focusHandler = handler;
+      return () => undefined;
+    });
+    vi.spyOn(desktop, "getPermissionStatus")
+      .mockResolvedValueOnce({
+        microphone: "unknown",
+        accessibility: "denied",
+      })
+      .mockResolvedValueOnce(defaultPermissions);
+
+    render(<App />);
+
+    expect(await screen.findByText("Permissions required to continue")).toBeVisible();
+
+    act(() => {
+      focusHandler?.(true);
+    });
+
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Permissions required to continue"),
+      ).not.toBeInTheDocument();
+    });
+    expect(screen.getByRole("button", { name: "Hold to Record" })).toBeEnabled();
+  });
+
+  it("refreshes permissions when the app regains focus and shows revoked access", async () => {
+    let focusHandler: ((focused: boolean) => void) | undefined;
+
+    vi.spyOn(desktop, "onCurrentWindowFocusChange").mockImplementation(async (handler) => {
+      focusHandler = handler;
+      return () => undefined;
+    });
+    vi.spyOn(desktop, "getPermissionStatus")
+      .mockResolvedValueOnce(defaultPermissions)
+      .mockResolvedValueOnce({
+        microphone: "granted",
+        accessibility: "denied",
+      });
+
+    render(<App />);
+
+    expect(await screen.findByRole("button", { name: "Hold to Record" })).toBeEnabled();
+
+    act(() => {
+      focusHandler?.(true);
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Permissions required to continue")).toBeVisible();
+    });
+    expect(screen.getByRole("button", { name: "Hold to Record" })).toBeDisabled();
   });
 
   it("does not show the HUD when the setting is disabled", async () => {

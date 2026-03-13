@@ -262,6 +262,31 @@ export async function onTraySettingsChange(
   });
 }
 
+export async function onCurrentWindowFocusChange(
+  handler: (focused: boolean) => void,
+): Promise<() => void> {
+  if (!isTauri()) {
+    const handleFocus = () => {
+      handler(true);
+    };
+    const handleBlur = () => {
+      handler(false);
+    };
+
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
+    };
+  }
+
+  return getCurrentWindow().onFocusChanged(({ payload }) => {
+    handler(payload);
+  });
+}
+
 export function currentDesktopWindowLabel(): string {
   if (!isTauri()) {
     return "main";

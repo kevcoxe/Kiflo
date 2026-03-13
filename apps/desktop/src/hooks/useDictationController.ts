@@ -17,6 +17,7 @@ import {
   onTrayToggleRecording,
   onTrayModeChange,
   onTraySettingsChange,
+  onCurrentWindowFocusChange,
   openAccessibilitySettings,
   openMicrophoneSettings,
   getPermissionStatus,
@@ -77,6 +78,8 @@ const DEFAULT_MODEL_STATUS: ModelStatus = {
 };
 
 const HUD_ERROR_FLASH_MS = 450;
+const PERMISSION_REQUIRED_MESSAGE =
+  "Grant microphone and accessibility permissions before recording.";
 
 type ControllerState = {
   status: WorkflowStatus;
@@ -182,6 +185,7 @@ export function useDictationController() {
     let removeTrayToggleListener: () => void = () => undefined;
     let removeTrayModeListener: () => void = () => undefined;
     let removeTraySettingsListener: () => void = () => undefined;
+    let removeWindowFocusListener: () => void = () => undefined;
 
     async function bootstrap() {
       try {
@@ -213,6 +217,13 @@ export function useDictationController() {
             setMode(nextSettings.preferredMode);
           },
         );
+        removeWindowFocusListener = await onCurrentWindowFocusChange((focused) => {
+          if (!focused) {
+            return;
+          }
+
+          void refreshPermissions();
+        });
 
         const [loadedSettings, loadedPermissions, loadedHistory, loadedModelStatus] =
           await Promise.all([
@@ -260,6 +271,7 @@ export function useDictationController() {
       removeTrayToggleListener();
       removeTrayModeListener();
       removeTraySettingsListener();
+      removeWindowFocusListener();
       void unregisterAllGlobalShortcuts();
     };
   }, []);
@@ -322,7 +334,34 @@ export function useDictationController() {
 
   async function refreshPermissions() {
     try {
-      setPermissions(await getPermissionStatus());
+      const nextPermissions = await getPermissionStatus();
+      const permissionsReady =
+        nextPermissions.microphone === "granted" &&
+        nextPermissions.accessibility === "granted";
+      const previousError = stateRef.current.error;
+      const previousStatus = stateRef.current.status;
+      const shouldClearPermissionError =
+        permissionsReady && previousError === PERMISSION_REQUIRED_MESSAGE;
+
+      stateRef.current = {
+        ...stateRef.current,
+        permissions: nextPermissions,
+        error: shouldClearPermissionError ? null : previousError,
+        status:
+          shouldClearPermissionError && previousStatus === "error"
+            ? "idle"
+            : previousStatus,
+      };
+
+      setPermissions(nextPermissions);
+
+      if (shouldClearPermissionError) {
+        setError(null);
+
+        if (previousStatus === "error") {
+          setStatus("idle");
+        }
+      }
     } catch {
       // Permission status is best-effort; keep the UI responsive even if it fails.
     }
@@ -464,8 +503,13 @@ export function useDictationController() {
       activeState.permissions.microphone !== "granted" ||
       activeState.permissions.accessibility !== "granted"
     ) {
+      stateRef.current = {
+        ...activeState,
+        status: "error",
+        error: PERMISSION_REQUIRED_MESSAGE,
+      };
       setStatus("error");
-      setError("Grant microphone and accessibility permissions before recording.");
+      setError(PERMISSION_REQUIRED_MESSAGE);
       return;
     }
 
@@ -495,8 +539,13 @@ export function useDictationController() {
       activeState.permissions.microphone !== "granted" ||
       activeState.permissions.accessibility !== "granted"
     ) {
+      stateRef.current = {
+        ...activeState,
+        status: "error",
+        error: PERMISSION_REQUIRED_MESSAGE,
+      };
       setStatus("error");
-      setError("Grant microphone and accessibility permissions before recording.");
+      setError(PERMISSION_REQUIRED_MESSAGE);
       return;
     }
 
