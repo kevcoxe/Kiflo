@@ -407,6 +407,7 @@ mod tests {
         initialize(&path).unwrap();
 
         let mut settings = get_settings(&path).unwrap();
+        assert!(settings.warm_model_on_launch);
         settings.hotkey = "Option+Shift+Space".to_string();
         settings.interaction_mode = "toggle".to_string();
         settings.pause_background_audio = false;

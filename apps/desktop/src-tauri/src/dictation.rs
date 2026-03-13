@@ -378,6 +378,11 @@ pub fn prewarm_model(
             state.last_error = None;
             Ok(())
         }
+        Err(error) if should_tolerate_prewarm_failure(&error) => {
+            state.helper.take();
+            state.last_error = None;
+            Ok(())
+        }
         Err(error) => {
             state.last_error = Some(error.clone());
             Err(error)
@@ -420,6 +425,13 @@ fn transcribe_with_helper(
         let _ = fs::remove_file(&temp_audio_path);
         result?
     };
+
+    {
+        let mut state = runtime
+            .lock()
+            .map_err(|_| "Model status lock poisoned.".to_string())?;
+        state.last_error = None;
+    }
 
     let raw_text = response.text.trim().to_string();
     if raw_text.is_empty() {
@@ -960,6 +972,10 @@ fn helper_error_message(stderr: &[u8], stdout: &[u8]) -> String {
         return "The packaged Python runtime could not be relocated on this machine. Reinstall Tator from a build that includes the updated bundled runtime, or temporarily set `TATOR_PYTHON_EXECUTABLE` to a local Python 3.12 environment with `mlx_whisper` installed.".to_string();
     }
 
+    if combined.contains("signal: 9 (SIGKILL)") || combined.contains("killed: 9") {
+        return "macOS terminated the bundled transcription helper (SIGKILL). On GitHub release builds this usually means the copied MLX runtime is still quarantined or was blocked while launching. Move Tator into `/Applications`, reopen it from Finder once, or reinstall with a build that clears quarantine from the bundled runtime. As a manual workaround, run `xattr -dr com.apple.quarantine /path/to/Tator.app` or set `TATOR_PYTHON_EXECUTABLE` to a local Python 3.12 environment with `mlx_whisper` installed.".to_string();
+    }
+
     if !stderr.is_empty() {
         stderr
     } else if !stdout.is_empty() {
@@ -967,6 +983,10 @@ fn helper_error_message(stderr: &[u8], stdout: &[u8]) -> String {
     } else {
         "The local transcription helper failed without an error message.".to_string()
     }
+}
+
+fn should_tolerate_prewarm_failure(error: &str) -> bool {
+    error.contains("signal: 9 (SIGKILL)") || error.contains("killed: 9")
 }
 
 fn helper_runtime_availability_error(
@@ -1030,6 +1050,7 @@ fn ensure_bundled_python_runtime(
             .as_ref()
             .is_some_and(|source| bundled_runtime_manifest_changed(&install_dir, source))
     {
+        clear_quarantine_attributes(&install_dir);
         return Ok(Some(bundled_runtime_from_install_dir(install_dir)));
     }
 
@@ -1053,6 +1074,7 @@ fn ensure_bundled_python_runtime(
             .join("bin")
             .join("python3.12"),
     )?;
+    clear_quarantine_attributes(&install_dir);
 
     Ok(Some(bundled_runtime_from_install_dir(install_dir)))
 }
@@ -1141,6 +1163,13 @@ fn ensure_executable(path: &Path) -> Result<(), String> {
     permissions.set_mode(0o755);
     fs::set_permissions(path, permissions)
         .map_err(|error| format!("Unable to mark `{}` as executable: {error}", path.display()))
+}
+
+fn clear_quarantine_attributes(root: &Path) {
+    let _ = Command::new("xattr")
+        .args(["-dr", "com.apple.quarantine"])
+        .arg(root)
+        .status();
 }
 
 #[cfg(test)]
@@ -1233,5 +1262,25 @@ mod tests {
         );
         assert!(message.contains("packaged Python runtime could not be relocated"));
         assert!(message.contains("TATOR_PYTHON_EXECUTABLE"));
+    }
+
+    #[test]
+    fn helper_error_message_maps_sigkill_to_quarantine_guidance() {
+        let message = helper_error_message(
+            b"The local transcription helper exited unexpectedly with status signal: 9 (SIGKILL).",
+            b"",
+        );
+        assert!(message.contains("copied MLX runtime is still quarantined"));
+        assert!(message.contains("xattr -dr com.apple.quarantine"));
+    }
+
+    #[test]
+    fn prewarm_tolerates_sigkill_failures() {
+        assert!(should_tolerate_prewarm_failure(
+            "The local transcription helper exited unexpectedly with status signal: 9 (SIGKILL).",
+        ));
+        assert!(!should_tolerate_prewarm_failure(
+            "ModuleNotFoundError: No module named 'mlx_whisper'",
+        ));
     }
 }
