@@ -56,6 +56,7 @@ const DEFAULT_SETTINGS: Settings = {
   hotkey: "Option+Space",
   autoPaste: true,
   pauseBackgroundAudio: true,
+  warmModelOnLaunch: true,
   recordingCueVolume: 75,
   restoreClipboard: true,
   interactionMode: "hold",

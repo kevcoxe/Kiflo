@@ -83,6 +83,16 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         />
         <span>Pause background audio during recording</span>
       </label>
+      <label className="toggle">
+        <input
+          checked={settings.warmModelOnLaunch}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("warmModelOnLaunch", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Warm speech model on app launch</span>
+      </label>
       <label className="field">
         <span>Recording cue volume ({settings.recordingCueVolume}%)</span>
         <input

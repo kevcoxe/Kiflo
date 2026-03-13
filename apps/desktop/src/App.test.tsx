@@ -8,6 +8,7 @@ const defaultSettings = {
   hotkey: "Option+Space",
   autoPaste: true,
   pauseBackgroundAudio: true,
+  warmModelOnLaunch: true,
   recordingCueVolume: 75,
   restoreClipboard: true,
   interactionMode: "hold" as const,
@@ -260,6 +261,19 @@ describe("App", () => {
     await waitFor(() => {
       expect(desktop.updateSettings).toHaveBeenCalledWith(
         expect.objectContaining({ hideDockIcon: true }),
+      );
+    });
+  });
+
+  it("persists the startup model warm-up preference from settings", async () => {
+    render(<App />);
+
+    const checkbox = await screen.findByLabelText("Warm speech model on app launch");
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ warmModelOnLaunch: false }),
       );
     });
   });

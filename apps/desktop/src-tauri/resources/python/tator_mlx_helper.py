@@ -12,6 +12,7 @@ import importlib
 import json
 from pathlib import Path
 import sys
+from typing import Any
 import wave
 
 import numpy as np
@@ -47,7 +48,7 @@ def load_waveform(audio_path: str) -> np.ndarray:
     return np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
 
 
-def transcribe_audio(audio_path: str, model_path: str, language: str) -> None:
+def transcribe_audio(audio_path: str, model_path: str, language: str) -> dict[str, str]:
     audio_file = Path(audio_path)
     local_model = Path(model_path)
     if not audio_file.exists():
@@ -65,14 +66,53 @@ def transcribe_audio(audio_path: str, model_path: str, language: str) -> None:
         word_timestamps=False,
         condition_on_previous_text=False,
     )
-    print(
-        json.dumps(
-            {
-                "text": result.get("text", "").strip(),
-                "language": result.get("language", language),
-            }
-        )
-    )
+    return {
+        "text": result.get("text", "").strip(),
+        "language": result.get("language", language),
+    }
+
+
+def preload_model(model_path: str) -> dict[str, str]:
+    local_model = Path(model_path)
+    if not local_model.exists():
+        raise RuntimeError(f"Model is not installed at: {local_model}")
+
+    mx = importlib.import_module("mlx.core")
+    transcribe_module = importlib.import_module("mlx_whisper.transcribe")
+    transcribe_module.ModelHolder.get_model(str(local_model), mx.float16)
+    return {"status": "ready"}
+
+
+def print_json(payload: dict[str, Any]) -> None:
+    print(json.dumps(payload), flush=True)
+
+
+def serve() -> None:
+    for line in sys.stdin:
+        request = line.strip()
+        if not request:
+            continue
+
+        try:
+            payload = json.loads(request)
+            command = payload.get("command")
+
+            if command == "transcribe":
+                print_json(
+                    transcribe_audio(
+                        payload["audio_path"],
+                        payload["model_path"],
+                        payload.get("language", "en"),
+                    )
+                )
+            elif command == "preload-model":
+                print_json(preload_model(payload["model_path"]))
+            elif command == "download-model":
+                download_model(payload["model_repo"], payload["model_path"])
+            else:
+                raise RuntimeError(f"Unsupported helper command: {command}")
+        except Exception as exc:  # noqa: BLE001
+            print_json({"error": str(exc)})
 
 
 def download_model(model_repo: str, model_path: str) -> None:
@@ -84,7 +124,7 @@ def download_model(model_repo: str, model_path: str) -> None:
         local_dir=str(destination),
         local_dir_use_symlinks=False,
     )
-    print(json.dumps({"model_path": str(downloaded)}))
+    print_json({"model_path": str(downloaded)})
 
 
 def main() -> int:
@@ -96,14 +136,23 @@ def main() -> int:
     transcribe.add_argument("--model-path", required=True)
     transcribe.add_argument("--language", default="en")
 
+    preload = subparsers.add_parser("preload-model")
+    preload.add_argument("--model-path", required=True)
+
     download = subparsers.add_parser("download-model")
     download.add_argument("--model-repo", required=True)
     download.add_argument("--model-path", required=True)
 
+    subparsers.add_parser("serve")
+
     args = parser.parse_args()
     try:
         if args.command == "transcribe":
-            transcribe_audio(args.audio_path, args.model_path, args.language)
+            print_json(transcribe_audio(args.audio_path, args.model_path, args.language))
+        elif args.command == "preload-model":
+            print_json(preload_model(args.model_path))
+        elif args.command == "serve":
+            serve()
         else:
             download_model(args.model_repo, args.model_path)
     except Exception as exc:  # noqa: BLE001

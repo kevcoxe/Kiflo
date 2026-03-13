@@ -1,15 +1,15 @@
 use std::{
     env, fs,
-    io::Cursor,
+    io::{BufRead, BufReader, Cursor, Read, Write},
     os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
     sync::Mutex,
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use hound::WavReader;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::models::{CleanupResponse, DictationMode, ModelStatus, TranscriptionResponse};
@@ -33,10 +33,10 @@ const QUESTION_OPENERS: &[&str] = &[
     "can", "could", "would", "will", "should", "is", "are", "do", "does", "did",
 ];
 
-#[derive(Debug, Default)]
 pub struct ModelRuntimeState {
     pub downloading: bool,
     pub last_error: Option<String>,
+    helper: Option<LiveHelperProcess>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -55,6 +55,7 @@ struct HelperRunner {
     program: String,
     base_args: Vec<String>,
     env_vars: Vec<(String, String)>,
+    supports_persistent_process: bool,
 }
 
 struct BundledPythonRuntime {
@@ -63,9 +64,193 @@ struct BundledPythonRuntime {
     site_packages: PathBuf,
 }
 
+struct LiveHelperProcess {
+    child: Child,
+    stdin: ChildStdin,
+    stdout: BufReader<ChildStdout>,
+    stderr: ChildStderr,
+}
+
+#[derive(Serialize)]
+struct HelperServerRequest {
+    command: &'static str,
+    audio_path: String,
+    model_path: String,
+    language: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct HelperServerResponse {
+    text: Option<String>,
+    language: Option<String>,
+    status: Option<String>,
+    error: Option<String>,
+}
+
+#[derive(Debug)]
+enum PersistentHelperError {
+    Restartable(String),
+    Message(String),
+}
+
+impl std::fmt::Debug for ModelRuntimeState {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ModelRuntimeState")
+            .field("downloading", &self.downloading)
+            .field("last_error", &self.last_error)
+            .field("helper_running", &self.helper.is_some())
+            .finish()
+    }
+}
+
+impl Default for ModelRuntimeState {
+    fn default() -> Self {
+        Self {
+            downloading: false,
+            last_error: None,
+            helper: None,
+        }
+    }
+}
+
+impl Drop for LiveHelperProcess {
+    fn drop(&mut self) {
+        let _ = self.stdin.flush();
+        let _ = self.child.kill();
+        let _ = self.child.wait();
+    }
+}
+
+impl LiveHelperProcess {
+    fn spawn(runner: &HelperRunner) -> Result<Self, String> {
+        let mut command = Command::new(&runner.program);
+        command
+            .args(&runner.base_args)
+            .arg("serve")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        for (key, value) in &runner.env_vars {
+            command.env(key, value);
+        }
+
+        let mut child = command.spawn().map_err(|error| {
+            format!(
+                "Unable to launch the local transcription helper using `{}`: {error}",
+                runner.program
+            )
+        })?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| "The local transcription helper did not expose stdin.".to_string())?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| "The local transcription helper did not expose stdout.".to_string())?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| "The local transcription helper did not expose stderr.".to_string())?;
+
+        Ok(Self {
+            child,
+            stdin,
+            stdout: BufReader::new(stdout),
+            stderr,
+        })
+    }
+
+    fn transcribe(
+        &mut self,
+        audio_path: &Path,
+        model_path: &Path,
+        language: &str,
+    ) -> Result<HelperTranscriptionResponse, PersistentHelperError> {
+        let request = HelperServerRequest {
+            command: "transcribe",
+            audio_path: audio_path.to_string_lossy().into_owned(),
+            model_path: model_path.to_string_lossy().into_owned(),
+            language: language.to_string(),
+        };
+        let response = self.send_request(&request)?;
+        if let Some(error) = response.error {
+            return Err(PersistentHelperError::Message(error));
+        }
+
+        Ok(HelperTranscriptionResponse {
+            text: response.text.unwrap_or_default(),
+            language: response.language,
+        })
+    }
+
+    fn preload_model(&mut self, model_path: &Path) -> Result<(), PersistentHelperError> {
+        let request = serde_json::json!({
+            "command": "preload-model",
+            "model_path": model_path.to_string_lossy(),
+        });
+        let response = self.send_request(&request)?;
+        if let Some(error) = response.error {
+            return Err(PersistentHelperError::Message(error));
+        }
+        if response.status.as_deref() == Some("ready") {
+            Ok(())
+        } else {
+            Err(PersistentHelperError::Restartable(
+                "The local transcription helper returned an unexpected preload response."
+                    .to_string(),
+            ))
+        }
+    }
+
+    fn send_request<T: Serialize>(
+        &mut self,
+        request: &T,
+    ) -> Result<HelperServerResponse, PersistentHelperError> {
+        let serialized = serde_json::to_string(request)
+            .map_err(|error| PersistentHelperError::Message(error.to_string()))?;
+        self.stdin
+            .write_all(serialized.as_bytes())
+            .and_then(|_| self.stdin.write_all(b"\n"))
+            .and_then(|_| self.stdin.flush())
+            .map_err(|error| PersistentHelperError::Restartable(error.to_string()))?;
+
+        let mut line = String::new();
+        let bytes_read = self
+            .stdout
+            .read_line(&mut line)
+            .map_err(|error| PersistentHelperError::Restartable(error.to_string()))?;
+        if bytes_read == 0 {
+            return Err(PersistentHelperError::Restartable(self.exit_message()));
+        }
+
+        serde_json::from_str(line.trim()).map_err(|error| {
+            PersistentHelperError::Restartable(format!(
+                "The local transcription helper returned invalid JSON: {error}"
+            ))
+        })
+    }
+
+    fn exit_message(&mut self) -> String {
+        let mut stderr = String::new();
+        let _ = self.stderr.read_to_string(&mut stderr);
+        let status = self.child.wait().ok();
+        let stderr = stderr.trim();
+        if !stderr.is_empty() {
+            stderr.to_string()
+        } else if let Some(status) = status {
+            format!("The local transcription helper exited unexpectedly with status {status}.")
+        } else {
+            "The local transcription helper exited unexpectedly.".to_string()
+        }
+    }
+}
+
 pub fn transcribe_audio(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
+    runtime: &Mutex<ModelRuntimeState>,
     audio_base64: &str,
     mode: DictationMode,
     app_name: Option<String>,
@@ -78,7 +263,7 @@ pub fn transcribe_audio(
     match selected_provider() {
         AsrProviderKind::Mock => Ok(mock_transcription(mode, app_name, duration_ms)),
         AsrProviderKind::MlxWhisper => {
-            transcribe_with_helper(app_data_dir, resource_dir, &audio, duration_ms)
+            transcribe_with_helper(app_data_dir, resource_dir, runtime, &audio, duration_ms)
         }
     }
 }
@@ -153,14 +338,57 @@ pub fn download_model(
         .lock()
         .map_err(|_| "Model status lock poisoned.".to_string())?;
     state.downloading = false;
+    if result.is_ok() {
+        state.helper.take();
+    }
     state.last_error = result.as_ref().err().cloned();
 
     result
 }
 
+pub fn prewarm_model(
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+    runtime: &Mutex<ModelRuntimeState>,
+) -> Result<(), String> {
+    if selected_provider() != AsrProviderKind::MlxWhisper {
+        return Ok(());
+    }
+
+    if let Some(error) = helper_runtime_availability_error(app_data_dir, resource_dir) {
+        let mut state = runtime
+            .lock()
+            .map_err(|_| "Model status lock poisoned.".to_string())?;
+        state.last_error = Some(error.clone());
+        return Err(error);
+    }
+
+    let model_dir = ensure_model_installed(app_data_dir)?;
+    let helper_script = ensure_helper_script(app_data_dir)?;
+    let runner = resolve_helper_runner(app_data_dir, resource_dir, &helper_script)?;
+    if !runner.supports_persistent_process {
+        return Ok(());
+    }
+
+    let mut state = runtime
+        .lock()
+        .map_err(|_| "Model status lock poisoned.".to_string())?;
+    match preload_with_persistent_helper(&mut state, &runner, &model_dir) {
+        Ok(()) => {
+            state.last_error = None;
+            Ok(())
+        }
+        Err(error) => {
+            state.last_error = Some(error.clone());
+            Err(error)
+        }
+    }
+}
+
 fn transcribe_with_helper(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
+    runtime: &Mutex<ModelRuntimeState>,
     audio: &[u8],
     duration_ms: i64,
 ) -> Result<TranscriptionResponse, String> {
@@ -171,39 +399,28 @@ fn transcribe_with_helper(
     fs::write(&temp_audio_path, audio)
         .map_err(|error| format!("Unable to write temporary audio: {error}"))?;
 
-    let mut command = Command::new(&runner.program);
-    command
-        .args(&runner.base_args)
-        .arg("transcribe")
-        .arg("--audio-path")
-        .arg(&temp_audio_path)
-        .arg("--model-path")
-        .arg(&model_dir)
-        .arg("--language")
-        .arg(MODEL_LANGUAGE);
-    for (key, value) in &runner.env_vars {
-        command.env(key, value);
-    }
+    let response = if runner.supports_persistent_process {
+        let result = {
+            let mut state = runtime
+                .lock()
+                .map_err(|_| "Model status lock poisoned.".to_string())?;
+            transcribe_with_persistent_helper(
+                &mut state,
+                &runner,
+                &temp_audio_path,
+                &model_dir,
+                MODEL_LANGUAGE,
+            )
+        };
+        let _ = fs::remove_file(&temp_audio_path);
+        result?
+    } else {
+        let result =
+            transcribe_with_one_shot_helper(&runner, &temp_audio_path, &model_dir, MODEL_LANGUAGE);
+        let _ = fs::remove_file(&temp_audio_path);
+        result?
+    };
 
-    let output = command.output();
-
-    let _ = fs::remove_file(&temp_audio_path);
-
-    let output = output.map_err(|error| {
-        format!(
-            "Unable to launch the local transcription helper using `{}`: {error}",
-            runner.program
-        )
-    })?;
-
-    if !output.status.success() {
-        return Err(helper_error_message(&output.stderr, &output.stdout));
-    }
-
-    let response: HelperTranscriptionResponse =
-        serde_json::from_slice(&output.stdout).map_err(|error| {
-            format!("The local transcription helper returned invalid JSON: {error}")
-        })?;
     let raw_text = response.text.trim().to_string();
     if raw_text.is_empty() {
         return Err(
@@ -220,6 +437,119 @@ fn transcribe_with_helper(
         duration_ms,
         provider: MLX_PROVIDER.to_string(),
     })
+}
+
+fn transcribe_with_one_shot_helper(
+    runner: &HelperRunner,
+    audio_path: &Path,
+    model_dir: &Path,
+    language: &str,
+) -> Result<HelperTranscriptionResponse, String> {
+    let mut command = Command::new(&runner.program);
+    command
+        .args(&runner.base_args)
+        .arg("transcribe")
+        .arg("--audio-path")
+        .arg(audio_path)
+        .arg("--model-path")
+        .arg(model_dir)
+        .arg("--language")
+        .arg(language);
+    for (key, value) in &runner.env_vars {
+        command.env(key, value);
+    }
+
+    let output = command.output().map_err(|error| {
+        format!(
+            "Unable to launch the local transcription helper using `{}`: {error}",
+            runner.program
+        )
+    })?;
+
+    if !output.status.success() {
+        return Err(helper_error_message(&output.stderr, &output.stdout));
+    }
+
+    serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("The local transcription helper returned invalid JSON: {error}"))
+}
+
+fn transcribe_with_persistent_helper(
+    state: &mut ModelRuntimeState,
+    runner: &HelperRunner,
+    audio_path: &Path,
+    model_dir: &Path,
+    language: &str,
+) -> Result<HelperTranscriptionResponse, String> {
+    if state.helper.is_none() {
+        state.helper = Some(LiveHelperProcess::spawn(runner)?);
+    }
+
+    let response = match state
+        .helper
+        .as_mut()
+        .expect("helper initialized")
+        .transcribe(audio_path, model_dir, language)
+    {
+        Ok(response) => Ok(response),
+        Err(PersistentHelperError::Message(error)) => {
+            Err(helper_error_message(error.as_bytes(), b""))
+        }
+        Err(PersistentHelperError::Restartable(_)) => {
+            state.helper.take();
+            state.helper = Some(LiveHelperProcess::spawn(runner)?);
+            state
+                .helper
+                .as_mut()
+                .expect("helper respawned")
+                .transcribe(audio_path, model_dir, language)
+                .map_err(|error| match error {
+                    PersistentHelperError::Restartable(message)
+                    | PersistentHelperError::Message(message) => {
+                        helper_error_message(message.as_bytes(), b"")
+                    }
+                })
+        }
+    }?;
+
+    Ok(response)
+}
+
+fn preload_with_persistent_helper(
+    state: &mut ModelRuntimeState,
+    runner: &HelperRunner,
+    model_dir: &Path,
+) -> Result<(), String> {
+    if state.helper.is_none() {
+        state.helper = Some(LiveHelperProcess::spawn(runner)?);
+    }
+
+    match state
+        .helper
+        .as_mut()
+        .expect("helper initialized")
+        .preload_model(model_dir)
+    {
+        Ok(()) => Ok(()),
+        Err(PersistentHelperError::Message(error)) => {
+            Err(helper_error_message(error.as_bytes(), b""))
+        }
+        Err(PersistentHelperError::Restartable(_)) => {
+            state.helper.take();
+            state.helper = Some(LiveHelperProcess::spawn(runner)?);
+            state
+                .helper
+                .as_mut()
+                .expect("helper respawned")
+                .preload_model(model_dir)
+                .map_err(|error| match error {
+                    PersistentHelperError::Restartable(message)
+                    | PersistentHelperError::Message(message) => {
+                        helper_error_message(message.as_bytes(), b"")
+                    }
+                })
+        }
+    }
 }
 
 fn selected_provider() -> AsrProviderKind {
@@ -528,6 +858,7 @@ fn resolve_helper_runner(
             program: executable,
             base_args: Vec::new(),
             env_vars: Vec::new(),
+            supports_persistent_process: false,
         });
     }
 
@@ -540,6 +871,7 @@ fn resolve_helper_runner(
             program: bundled_helper.to_string_lossy().into_owned(),
             base_args: Vec::new(),
             env_vars: Vec::new(),
+            supports_persistent_process: false,
         });
     }
 
@@ -559,6 +891,7 @@ fn resolve_helper_runner(
                 ("PYTHONDONTWRITEBYTECODE".to_string(), "1".to_string()),
                 ("PYTHONNOUSERSITE".to_string(), "1".to_string()),
             ],
+            supports_persistent_process: true,
         });
     }
 
@@ -567,6 +900,7 @@ fn resolve_helper_runner(
             program: executable,
             base_args: vec![helper_script.to_string_lossy().into_owned()],
             env_vars: Vec::new(),
+            supports_persistent_process: true,
         });
     }
 
@@ -575,6 +909,7 @@ fn resolve_helper_runner(
             program: dev_python.to_string_lossy().into_owned(),
             base_args: vec![helper_script.to_string_lossy().into_owned()],
             env_vars: Vec::new(),
+            supports_persistent_process: true,
         });
     }
 
@@ -582,6 +917,7 @@ fn resolve_helper_runner(
         program: "python3".to_string(),
         base_args: vec![helper_script.to_string_lossy().into_owned()],
         env_vars: Vec::new(),
+        supports_persistent_process: true,
     })
 }
 

@@ -27,6 +27,7 @@ export interface Settings {
   hotkey: string;
   autoPaste: boolean;
   pauseBackgroundAudio: boolean;
+  warmModelOnLaunch: boolean;
   recordingCueVolume: number;
   restoreClipboard: boolean;
   interactionMode: RecordingInteractionMode;

@@ -8,7 +8,7 @@ mod models;
 mod permissions;
 mod recording;
 
-use std::{env, fs, path::PathBuf, sync::Mutex};
+use std::{env, fs, path::PathBuf, sync::Mutex, thread};
 
 use hud::{create_hud_window, hide_hud, set_hud_phase, show_hud};
 use models::{
@@ -32,6 +32,7 @@ const MENU_ITEM_MODE_CHAT: &str = "mode-chat";
 const MENU_ITEM_MODE_LIST: &str = "mode-list";
 const MENU_ITEM_SETTINGS_SUBMENU: &str = "settings-submenu";
 const MENU_ITEM_PAUSE_BACKGROUND_AUDIO: &str = "pause-background-audio";
+const MENU_ITEM_WARM_MODEL_ON_LAUNCH: &str = "warm-model-on-launch";
 const MENU_ITEM_SHOW_HUD: &str = "show-hud";
 const MENU_ITEM_INTERACTION_SUBMENU: &str = "interaction-submenu";
 const MENU_ITEM_INTERACTION_HOLD: &str = "interaction-hold";
@@ -77,8 +78,12 @@ fn update_settings(
     state: State<'_, AppState>,
     settings: Settings,
 ) -> Result<Settings, String> {
+    let previous = db::get_settings(state.inner().database_path.as_path())?;
     let saved = db::update_settings(state.inner().database_path.as_path(), &settings)?;
     sync_tray_menu(&app, &saved)?;
+    if saved.warm_model_on_launch && !previous.warm_model_on_launch {
+        maybe_prewarm_model(&app);
+    }
     Ok(saved)
 }
 
@@ -131,6 +136,7 @@ fn transcribe_audio(
     dictation::transcribe_audio(
         state.inner().app_data_dir.as_path(),
         state.inner().resource_dir.as_deref(),
+        &state.inner().model_runtime,
         &audio_base64,
         mode,
         app_name,
@@ -314,6 +320,14 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         settings.pause_background_audio,
         None::<&str>,
     )?;
+    let warm_model_on_launch = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_WARM_MODEL_ON_LAUNCH,
+        "Warm Model On Launch",
+        true,
+        settings.warm_model_on_launch,
+        None::<&str>,
+    )?;
     let show_hud = CheckMenuItem::with_id(
         app,
         MENU_ITEM_SHOW_HUD,
@@ -350,7 +364,12 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         MENU_ITEM_SETTINGS_SUBMENU,
         "Settings",
         true,
-        &[&pause_background_audio, &show_hud, &interaction_mode_menu],
+        &[
+            &pause_background_audio,
+            &warm_model_on_launch,
+            &show_hud,
+            &interaction_mode_menu,
+        ],
     )?;
     let open_microphone_settings = MenuItem::with_id(
         app,
@@ -433,11 +452,28 @@ where
         .try_state::<AppState>()
         .ok_or_else(|| "App state is not available.".to_string())?;
     let mut settings = db::get_settings(state.database_path.as_path())?;
+    let warm_model_was_enabled = settings.warm_model_on_launch;
     updater(&mut settings);
     let saved = db::update_settings(state.database_path.as_path(), &settings)?;
     sync_tray_menu(app, &saved)?;
+    if saved.warm_model_on_launch && !warm_model_was_enabled {
+        maybe_prewarm_model(app);
+    }
     app.emit(TRAY_SETTINGS_CHANGED_EVENT, saved)
         .map_err(|error| error.to_string())
+}
+
+fn maybe_prewarm_model(app: &AppHandle) {
+    let app_handle = app.clone();
+    thread::spawn(move || {
+        if let Some(state) = app_handle.try_state::<AppState>() {
+            let _ = dictation::prewarm_model(
+                state.app_data_dir.as_path(),
+                state.resource_dir.as_deref(),
+                &state.model_runtime,
+            );
+        }
+    });
 }
 
 fn show_main_window(app: &AppHandle) -> Result<(), String> {
@@ -528,6 +564,11 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                     settings.pause_background_audio = !settings.pause_background_audio;
                 });
             }
+            MENU_ITEM_WARM_MODEL_ON_LAUNCH => {
+                let _ = update_setting_from_tray(app, |settings| {
+                    settings.warm_model_on_launch = !settings.warm_model_on_launch;
+                });
+            }
             MENU_ITEM_SHOW_HUD => {
                 let _ = update_setting_from_tray(app, |settings| {
                     settings.show_hud = !settings.show_hud;
@@ -607,7 +648,11 @@ fn main() {
             fs::create_dir_all(&app_data_dir)?;
             let database_path = app_data_dir.join("tator.sqlite3");
             db::initialize(&database_path).map_err(std::io::Error::other)?;
+            let settings = db::get_settings(&database_path).map_err(std::io::Error::other)?;
             app.manage(AppState::new(database_path, app_data_dir, resource_dir));
+            if settings.warm_model_on_launch {
+                maybe_prewarm_model(app.handle());
+            }
             create_tray(&app.handle()).map_err(std::io::Error::other)?;
             create_hud_window(&app.handle()).map_err(std::io::Error::other)?;
             Ok(())
