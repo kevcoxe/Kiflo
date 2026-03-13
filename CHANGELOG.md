@@ -4,6 +4,17 @@ All notable changes to the shipped Tator desktop app are documented in this file
 
 The format is based on Keep a Changelog and adapted to this repository's tag-driven release workflow.
 
+## [0.1.8] - 2026-03-13
+
+### Changed
+- Remove the unused `apps/api` workspace
+- Remove the "stored locally in SQLite" helper copy
+- Remove desktop hero section
+- Add accessibility access buttons
+- Refresh permissions on focus
+- Add permissions submenu to menu bar
+- Collapse permissions panel
+
 ## [0.1.7] - 2026-03-12
 
 ### Changed
