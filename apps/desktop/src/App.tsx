@@ -170,7 +170,6 @@ export default function App() {
       <section className="panel">
         <div className="panel-header">
           <h2>Permissions</h2>
-          <span>Best-effort status</span>
         </div>
         <dl className="permission-grid">
           <div>

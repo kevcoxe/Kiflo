@@ -36,6 +36,9 @@ const MENU_ITEM_SHOW_HUD: &str = "show-hud";
 const MENU_ITEM_INTERACTION_SUBMENU: &str = "interaction-submenu";
 const MENU_ITEM_INTERACTION_HOLD: &str = "interaction-hold";
 const MENU_ITEM_INTERACTION_TOGGLE: &str = "interaction-toggle";
+const MENU_ITEM_PERMISSIONS_SUBMENU: &str = "permissions-submenu";
+const MENU_ITEM_OPEN_MICROPHONE_SETTINGS: &str = "open-microphone-settings";
+const MENU_ITEM_OPEN_ACCESSIBILITY_SETTINGS: &str = "open-accessibility-settings";
 const MENU_ITEM_QUIT: &str = "quit";
 const TRAY_TOGGLE_RECORDING_EVENT: &str = "tray-toggle-recording";
 const TRAY_MODE_CHANGED_EVENT: &str = "tray-mode-changed";
@@ -349,8 +352,30 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         true,
         &[&pause_background_audio, &show_hud, &interaction_mode_menu],
     )?;
+    let open_microphone_settings = MenuItem::with_id(
+        app,
+        MENU_ITEM_OPEN_MICROPHONE_SETTINGS,
+        "Open Microphone Settings",
+        true,
+        None::<&str>,
+    )?;
+    let open_accessibility_settings = MenuItem::with_id(
+        app,
+        MENU_ITEM_OPEN_ACCESSIBILITY_SETTINGS,
+        "Open Accessibility Settings",
+        true,
+        None::<&str>,
+    )?;
+    let permissions_menu = Submenu::with_id_and_items(
+        app,
+        MENU_ITEM_PERMISSIONS_SUBMENU,
+        "Permissions",
+        true,
+        &[&open_microphone_settings, &open_accessibility_settings],
+    )?;
     let separator_before_mode = PredefinedMenuItem::separator(app)?;
     let separator_before_settings = PredefinedMenuItem::separator(app)?;
+    let separator_before_permissions = PredefinedMenuItem::separator(app)?;
     let separator_before_quit = PredefinedMenuItem::separator(app)?;
     let quit = MenuItem::with_id(app, MENU_ITEM_QUIT, "Quit", true, None::<&str>)?;
 
@@ -363,6 +388,8 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
             &mode_menu,
             &separator_before_settings,
             &settings_menu,
+            &separator_before_permissions,
+            &permissions_menu,
             &separator_before_quit,
             &quit,
         ],
@@ -505,6 +532,12 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                 let _ = update_setting_from_tray(app, |settings| {
                     settings.show_hud = !settings.show_hud;
                 });
+            }
+            MENU_ITEM_OPEN_MICROPHONE_SETTINGS => {
+                let _ = permissions::open_microphone_settings();
+            }
+            MENU_ITEM_OPEN_ACCESSIBILITY_SETTINGS => {
+                let _ = permissions::open_accessibility_settings();
             }
             menu_id => {
                 if let Some(preferred_mode) = preferred_mode_for_menu_item(menu_id) {
