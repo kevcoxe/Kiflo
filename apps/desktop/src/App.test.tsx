@@ -229,6 +229,48 @@ describe("App", () => {
     });
   });
 
+  it("updates settings checkboxes when the tray menu changes them", async () => {
+    let traySettingsHandler:
+      | ((settings: typeof defaultSettings) => void)
+      | undefined;
+    vi.spyOn(desktop, "onTraySettingsChange").mockImplementation(async (handler) => {
+      traySettingsHandler = handler as typeof traySettingsHandler;
+      return () => undefined;
+    });
+
+    render(<App />);
+
+    const autoPasteCheckbox = await screen.findByLabelText(
+      "Paste automatically after cleanup",
+    );
+    const cueCheckbox = await screen.findByLabelText("Play recording cue");
+    expect(autoPasteCheckbox).toBeChecked();
+    expect(cueCheckbox).toBeChecked();
+
+    act(() => {
+      traySettingsHandler?.({
+        ...defaultSettings,
+        autoPaste: false,
+        recordingCueVolume: 0,
+        restoreClipboard: false,
+        saveHistory: false,
+        hideDockIcon: true,
+        showHud: false,
+      });
+    });
+
+    await waitFor(() => {
+      expect(autoPasteCheckbox).not.toBeChecked();
+      expect(cueCheckbox).not.toBeChecked();
+      expect(screen.getByLabelText("Restore clipboard after paste")).not.toBeChecked();
+      expect(screen.getByLabelText("Save recent dictation history")).not.toBeChecked();
+      expect(
+        screen.getByLabelText("Hide Dock icon after closing the window"),
+      ).toBeChecked();
+      expect(screen.getByLabelText("Show recording HUD overlay")).not.toBeChecked();
+    });
+  });
+
   it("lets users disable background audio pausing", async () => {
     render(<App />);
 
@@ -291,11 +333,11 @@ describe("App", () => {
     });
   });
 
-  it("persists recording cue volume changes from the settings slider", async () => {
+  it("persists recording cue playback changes from the settings checkbox", async () => {
     render(<App />);
 
-    const slider = await screen.findByLabelText("Recording cue volume (75%)");
-    fireEvent.change(slider, { target: { value: "0", valueAsNumber: 0 } });
+    const checkbox = await screen.findByLabelText("Play recording cue");
+    fireEvent.click(checkbox);
 
     await waitFor(() => {
       expect(desktop.updateSettings).toHaveBeenCalledWith(

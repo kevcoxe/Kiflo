@@ -31,8 +31,13 @@ const MENU_ITEM_MODE_DEFAULT: &str = "mode-default";
 const MENU_ITEM_MODE_CHAT: &str = "mode-chat";
 const MENU_ITEM_MODE_LIST: &str = "mode-list";
 const MENU_ITEM_SETTINGS_SUBMENU: &str = "settings-submenu";
+const MENU_ITEM_AUTO_PASTE: &str = "auto-paste";
 const MENU_ITEM_PAUSE_BACKGROUND_AUDIO: &str = "pause-background-audio";
 const MENU_ITEM_WARM_MODEL_ON_LAUNCH: &str = "warm-model-on-launch";
+const MENU_ITEM_PLAY_RECORDING_CUE: &str = "play-recording-cue";
+const MENU_ITEM_RESTORE_CLIPBOARD: &str = "restore-clipboard";
+const MENU_ITEM_SAVE_HISTORY: &str = "save-history";
+const MENU_ITEM_HIDE_DOCK_ICON: &str = "hide-dock-icon";
 const MENU_ITEM_SHOW_HUD: &str = "show-hud";
 const MENU_ITEM_INTERACTION_SUBMENU: &str = "interaction-submenu";
 const MENU_ITEM_INTERACTION_HOLD: &str = "interaction-hold";
@@ -44,6 +49,7 @@ const MENU_ITEM_QUIT: &str = "quit";
 const TRAY_TOGGLE_RECORDING_EVENT: &str = "tray-toggle-recording";
 const TRAY_MODE_CHANGED_EVENT: &str = "tray-mode-changed";
 const TRAY_SETTINGS_CHANGED_EVENT: &str = "tray-settings-changed";
+const DEFAULT_RECORDING_CUE_VOLUME: i64 = 75;
 
 struct AppState {
     database_path: PathBuf,
@@ -315,9 +321,17 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
     let pause_background_audio = CheckMenuItem::with_id(
         app,
         MENU_ITEM_PAUSE_BACKGROUND_AUDIO,
-        "Pause Media",
+        "Pause Background Audio",
         true,
         settings.pause_background_audio,
+        None::<&str>,
+    )?;
+    let auto_paste = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_AUTO_PASTE,
+        "Paste Automatically",
+        true,
+        settings.auto_paste,
         None::<&str>,
     )?;
     let warm_model_on_launch = CheckMenuItem::with_id(
@@ -328,10 +342,42 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         settings.warm_model_on_launch,
         None::<&str>,
     )?;
+    let play_recording_cue = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_PLAY_RECORDING_CUE,
+        "Play Recording Cue",
+        true,
+        settings.recording_cue_volume > 0,
+        None::<&str>,
+    )?;
+    let restore_clipboard = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_RESTORE_CLIPBOARD,
+        "Restore Clipboard",
+        true,
+        settings.restore_clipboard,
+        None::<&str>,
+    )?;
+    let save_history = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_SAVE_HISTORY,
+        "Save Dictation History",
+        true,
+        settings.save_history,
+        None::<&str>,
+    )?;
+    let hide_dock_icon = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_HIDE_DOCK_ICON,
+        "Hide Dock Icon On Close",
+        true,
+        settings.hide_dock_icon,
+        None::<&str>,
+    )?;
     let show_hud = CheckMenuItem::with_id(
         app,
         MENU_ITEM_SHOW_HUD,
-        "Show HUD",
+        "Show Recording HUD",
         true,
         settings.show_hud,
         None::<&str>,
@@ -365,8 +411,13 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         "Settings",
         true,
         &[
+            &auto_paste,
             &pause_background_audio,
             &warm_model_on_launch,
+            &play_recording_cue,
+            &restore_clipboard,
+            &save_history,
+            &hide_dock_icon,
             &show_hud,
             &interaction_mode_menu,
         ],
@@ -564,9 +615,38 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                     settings.pause_background_audio = !settings.pause_background_audio;
                 });
             }
+            MENU_ITEM_AUTO_PASTE => {
+                let _ = update_setting_from_tray(app, |settings| {
+                    settings.auto_paste = !settings.auto_paste;
+                });
+            }
             MENU_ITEM_WARM_MODEL_ON_LAUNCH => {
                 let _ = update_setting_from_tray(app, |settings| {
                     settings.warm_model_on_launch = !settings.warm_model_on_launch;
+                });
+            }
+            MENU_ITEM_PLAY_RECORDING_CUE => {
+                let _ = update_setting_from_tray(app, |settings| {
+                    settings.recording_cue_volume = if settings.recording_cue_volume > 0 {
+                        0
+                    } else {
+                        DEFAULT_RECORDING_CUE_VOLUME
+                    };
+                });
+            }
+            MENU_ITEM_RESTORE_CLIPBOARD => {
+                let _ = update_setting_from_tray(app, |settings| {
+                    settings.restore_clipboard = !settings.restore_clipboard;
+                });
+            }
+            MENU_ITEM_SAVE_HISTORY => {
+                let _ = update_setting_from_tray(app, |settings| {
+                    settings.save_history = !settings.save_history;
+                });
+            }
+            MENU_ITEM_HIDE_DOCK_ICON => {
+                let _ = update_setting_from_tray(app, |settings| {
+                    settings.hide_dock_icon = !settings.hide_dock_icon;
                 });
             }
             MENU_ITEM_SHOW_HUD => {

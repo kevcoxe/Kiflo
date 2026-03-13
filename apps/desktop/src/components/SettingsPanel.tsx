@@ -1,4 +1,5 @@
 import type { ChangeEvent } from "react";
+import { useRef } from "react";
 import {
   DICTATION_MODES,
   RECORDING_INTERACTION_MODES,
@@ -10,7 +11,19 @@ interface SettingsPanelProps {
   onChange: (settings: Settings) => void;
 }
 
+const DEFAULT_RECORDING_CUE_VOLUME = 75;
+
 export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
+  const previousCueVolumeRef = useRef(
+    settings.recordingCueVolume > 0
+      ? settings.recordingCueVolume
+      : DEFAULT_RECORDING_CUE_VOLUME,
+  );
+
+  if (settings.recordingCueVolume > 0) {
+    previousCueVolumeRef.current = settings.recordingCueVolume;
+  }
+
   function update<K extends keyof Settings>(key: K, value: Settings[K]) {
     onChange({
       ...settings,
@@ -93,18 +106,18 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
         />
         <span>Warm speech model on app launch</span>
       </label>
-      <label className="field">
-        <span>Recording cue volume ({settings.recordingCueVolume}%)</span>
+      <label className="toggle">
         <input
-          min="0"
-          max="100"
           onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("recordingCueVolume", event.target.valueAsNumber)
+            update(
+              "recordingCueVolume",
+              event.target.checked ? previousCueVolumeRef.current : 0,
+            )
           }
-          step="1"
-          type="range"
-          value={settings.recordingCueVolume}
+          checked={settings.recordingCueVolume > 0}
+          type="checkbox"
         />
+        <span>Play recording cue</span>
       </label>
       <label className="toggle">
         <input
