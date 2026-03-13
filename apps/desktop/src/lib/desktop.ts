@@ -170,6 +170,10 @@ export async function simulatePaste(): Promise<void> {
   return invokeDesktop("simulate_paste");
 }
 
+export async function simulateEnter(): Promise<void> {
+  return invokeDesktop("simulate_enter");
+}
+
 export async function quitApp(): Promise<void> {
   return invokeDesktop("quit_app");
 }

@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   hotkey TEXT NOT NULL,
   auto_paste INTEGER NOT NULL,
+  spoken_press_enter_command INTEGER NOT NULL DEFAULT 0,
   pause_background_audio INTEGER NOT NULL DEFAULT 1,
   warm_model_on_launch INTEGER NOT NULL DEFAULT 1,
   recording_cue_volume INTEGER NOT NULL DEFAULT 75,
@@ -57,22 +58,23 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
     let connection = open(path)?;
     let mut settings = connection
         .query_row(
-            "SELECT hotkey, auto_paste, pause_background_audio, warm_model_on_launch, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, save_history, hide_dock_icon, show_hud
+            "SELECT hotkey, auto_paste, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, save_history, hide_dock_icon, show_hud
              FROM settings WHERE id = 1",
             [],
             |row| {
                 Ok(Settings {
                     hotkey: row.get(0)?,
                     auto_paste: row.get::<_, i64>(1)? != 0,
-                    pause_background_audio: row.get::<_, i64>(2)? != 0,
-                    warm_model_on_launch: row.get::<_, i64>(3)? != 0,
-                    recording_cue_volume: row.get(4)?,
-                    restore_clipboard: row.get::<_, i64>(5)? != 0,
-                    interaction_mode: row.get(6)?,
-                    preferred_mode: row.get(7)?,
-                    save_history: row.get::<_, i64>(8)? != 0,
-                    hide_dock_icon: row.get::<_, i64>(9)? != 0,
-                    show_hud: row.get::<_, i64>(10)? != 0,
+                    spoken_press_enter_command: row.get::<_, i64>(2)? != 0,
+                    pause_background_audio: row.get::<_, i64>(3)? != 0,
+                    warm_model_on_launch: row.get::<_, i64>(4)? != 0,
+                    recording_cue_volume: row.get(5)?,
+                    restore_clipboard: row.get::<_, i64>(6)? != 0,
+                    interaction_mode: row.get(7)?,
+                    preferred_mode: row.get(8)?,
+                    save_history: row.get::<_, i64>(9)? != 0,
+                    hide_dock_icon: row.get::<_, i64>(10)? != 0,
+                    show_hud: row.get::<_, i64>(11)? != 0,
                 })
             },
         )
@@ -167,6 +169,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 id,
                 hotkey,
                 auto_paste,
+                spoken_press_enter_command,
                 pause_background_audio,
                 warm_model_on_launch,
                 recording_cue_volume,
@@ -177,10 +180,11 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 hide_dock_icon,
                 show_hud
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
              ON CONFLICT(id) DO UPDATE SET
                 hotkey = excluded.hotkey,
                 auto_paste = excluded.auto_paste,
+                spoken_press_enter_command = excluded.spoken_press_enter_command,
                 pause_background_audio = excluded.pause_background_audio,
                 warm_model_on_launch = excluded.warm_model_on_launch,
                 recording_cue_volume = excluded.recording_cue_volume,
@@ -193,6 +197,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
             params![
                 settings.hotkey,
                 bool_to_integer(settings.auto_paste),
+                bool_to_integer(settings.spoken_press_enter_command),
                 bool_to_integer(settings.pause_background_audio),
                 bool_to_integer(settings.warm_model_on_launch),
                 settings.recording_cue_volume,
@@ -219,6 +224,12 @@ fn ensure_settings_columns(connection: &Connection) -> Result<(), String> {
         "settings",
         "interaction_mode",
         "TEXT NOT NULL DEFAULT 'hold'",
+    )?;
+    add_column_if_missing(
+        connection,
+        "settings",
+        "spoken_press_enter_command",
+        "INTEGER NOT NULL DEFAULT 0",
     )?;
     add_column_if_missing(
         connection,
@@ -265,6 +276,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               id INTEGER PRIMARY KEY CHECK (id = 1),
               hotkey TEXT NOT NULL,
               auto_paste INTEGER NOT NULL,
+              spoken_press_enter_command INTEGER NOT NULL DEFAULT 0,
               pause_background_audio INTEGER NOT NULL DEFAULT 1,
               warm_model_on_launch INTEGER NOT NULL DEFAULT 1,
               recording_cue_volume INTEGER NOT NULL DEFAULT 75,
@@ -279,6 +291,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               id,
               hotkey,
               auto_paste,
+              spoken_press_enter_command,
               pause_background_audio,
               warm_model_on_launch,
               recording_cue_volume,
@@ -293,6 +306,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               id,
               hotkey,
               auto_paste,
+              0,
               COALESCE(pause_background_audio, 1),
               1,
               COALESCE(recording_cue_volume, 75),
@@ -410,6 +424,7 @@ mod tests {
         assert!(settings.warm_model_on_launch);
         settings.hotkey = "Option+Shift+Space".to_string();
         settings.interaction_mode = "toggle".to_string();
+        settings.spoken_press_enter_command = true;
         settings.pause_background_audio = false;
         settings.warm_model_on_launch = false;
         settings.recording_cue_volume = 0;
@@ -422,6 +437,7 @@ mod tests {
         let loaded = get_settings(&path).unwrap();
         assert_eq!(loaded.hotkey, "Option+Shift+Space");
         assert_eq!(loaded.interaction_mode, "toggle");
+        assert!(loaded.spoken_press_enter_command);
         assert!(!loaded.pause_background_audio);
         assert!(!loaded.warm_model_on_launch);
         assert_eq!(loaded.recording_cue_volume, 0);
@@ -470,6 +486,7 @@ mod tests {
                   hotkey TEXT NOT NULL,
                   api_base_url TEXT NOT NULL,
                   auto_paste INTEGER NOT NULL,
+                  spoken_press_enter_command INTEGER NOT NULL DEFAULT 0,
                   pause_background_audio INTEGER NOT NULL DEFAULT 1,
                   recording_cue_volume INTEGER NOT NULL DEFAULT 75,
                   restore_clipboard INTEGER NOT NULL,
@@ -482,6 +499,7 @@ mod tests {
                   hotkey,
                   api_base_url,
                   auto_paste,
+                  spoken_press_enter_command,
                   pause_background_audio,
                   recording_cue_volume,
                   restore_clipboard,
@@ -493,6 +511,7 @@ mod tests {
                   'Option+Space',
                   'http://127.0.0.1:8000',
                   1,
+                  0,
                   1,
                   75,
                   1,
@@ -509,6 +528,7 @@ mod tests {
 
         let migrated = get_settings(&path).unwrap();
         assert_eq!(migrated.hotkey, "Option+Space");
+        assert!(!migrated.spoken_press_enter_command);
         assert!(migrated.warm_model_on_launch);
         assert!(migrated.show_hud);
         assert!(

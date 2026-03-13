@@ -31,6 +31,7 @@ import {
   requestMicrophoneAccess,
   setClipboardText,
   showHud,
+  simulateEnter,
   simulatePaste,
   startRecording,
   stopRecording,
@@ -55,6 +56,7 @@ export type WorkflowStatus =
 const DEFAULT_SETTINGS: Settings = {
   hotkey: "Option+Space",
   autoPaste: true,
+  spokenPressEnterCommand: false,
   pauseBackgroundAudio: true,
   warmModelOnLaunch: true,
   recordingCueVolume: 75,
@@ -81,6 +83,8 @@ const DEFAULT_MODEL_STATUS: ModelStatus = {
 const HUD_ERROR_FLASH_MS = 450;
 const PERMISSION_REQUIRED_MESSAGE =
   "Grant microphone and accessibility permissions before recording.";
+const SPOKEN_PRESS_ENTER_PATTERN =
+  /(?:^|[\s,.;:!?'"()[\]-]+)press enter[\s,.;:!?'"()[\]-]*$/i;
 
 type ControllerState = {
   status: WorkflowStatus;
@@ -131,6 +135,38 @@ async function pasteText(text: string, restoreOriginalClipboard: boolean) {
       await restoreClipboard(snapshot);
     }
   }
+}
+
+async function pressEnterKey() {
+  await simulateEnter();
+}
+
+function extractSpokenPressEnterCommand(
+  rawText: string,
+  enabled: boolean,
+): { text: string; shouldPressEnter: boolean } {
+  if (!enabled) {
+    return {
+      text: rawText,
+      shouldPressEnter: false,
+    };
+  }
+
+  const trimmed = rawText.trim();
+  const match = SPOKEN_PRESS_ENTER_PATTERN.exec(trimmed);
+  if (!match || match.index === undefined) {
+    return {
+      text: rawText,
+      shouldPressEnter: false,
+    };
+  }
+
+  return {
+    text: trimmed
+      .slice(0, match.index)
+      .replace(/[\s,.;:!?'"()[\]-]+$/g, ""),
+    shouldPressEnter: true,
+  };
 }
 
 export function useDictationController() {
@@ -424,35 +460,39 @@ export function useDictationController() {
         activeState.mode,
         appName,
       );
-      const cleanup = await cleanupText(
+      const outputDirective = extractSpokenPressEnterCommand(
         transcription.raw_text,
+        activeState.settings.spokenPressEnterCommand,
+      );
+      const cleanup = await cleanupText(
+        outputDirective.text,
         activeState.mode,
         appName,
       );
-      const rawText = transcription.raw_text.trim();
+      const rawText = outputDirective.text.trim();
       const cleanText = cleanup.clean_text.trim();
-      if (!rawText) {
+      if (!rawText && !outputDirective.shouldPressEnter) {
         throw new Error(
           "No speech was detected in the recording. Try speaking louder or checking the selected microphone.",
         );
       }
-      if (!cleanText) {
+      if (!cleanText && !outputDirective.shouldPressEnter) {
         throw new Error(
           "The cleanup step returned empty text. Try again or switch recording modes.",
         );
       }
 
       let historyStatus: NewHistoryRecord["status"] = "inserted";
+      let processingSucceeded = true;
 
-      if (activeState.settings.autoPaste) {
+      if (activeState.settings.autoPaste && cleanText) {
         try {
-          await pasteText(
-            cleanup.clean_text,
-            activeState.settings.restoreClipboard,
-          );
+          await pasteText(cleanText, activeState.settings.restoreClipboard);
         } catch (pasteError) {
           historyStatus = "fallback";
-          setFallbackText(cleanup.clean_text);
+          processingSucceeded = false;
+          stateRef.current.status = "error";
+          setFallbackText(cleanText);
           setStatus("error");
           setError(
             describeError(
@@ -463,16 +503,38 @@ export function useDictationController() {
         }
       }
 
+      if (historyStatus === "inserted" && outputDirective.shouldPressEnter) {
+        try {
+          await pause(60);
+          await pressEnterKey();
+        } catch (enterError) {
+          processingSucceeded = false;
+          if (!activeState.settings.autoPaste || cleanText.length === 0) {
+            historyStatus = "failed";
+          }
+          stateRef.current.status = "error";
+          setStatus("error");
+          setError(
+            describeError(
+              enterError,
+              historyStatus === "inserted"
+                ? "The text was inserted, but pressing Enter failed."
+                : "Pressing Enter failed.",
+            ),
+          );
+        }
+      }
+
       await appendHistory({
         appName,
         mode: activeState.mode,
         audioDurationMs: audio.durationMs,
         rawText: transcription.raw_text,
-        cleanText: cleanup.clean_text,
+        cleanText,
         status: historyStatus,
       });
 
-      if (historyStatus === "inserted") {
+      if (processingSucceeded) {
         void safelyHideHud();
         stateRef.current.status = "success";
         setStatus("success");

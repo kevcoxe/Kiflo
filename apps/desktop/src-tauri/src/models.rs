@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub struct Settings {
     pub hotkey: String,
     pub auto_paste: bool,
+    pub spoken_press_enter_command: bool,
     pub pause_background_audio: bool,
     pub warm_model_on_launch: bool,
     pub recording_cue_volume: i64,
@@ -21,6 +22,7 @@ impl Default for Settings {
         Self {
             hotkey: "Option+Space".to_string(),
             auto_paste: true,
+            spoken_press_enter_command: false,
             pause_background_audio: true,
             warm_model_on_launch: true,
             recording_cue_volume: 75,

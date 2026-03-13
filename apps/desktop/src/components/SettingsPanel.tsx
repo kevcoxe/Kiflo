@@ -88,6 +88,16 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
       </label>
       <label className="toggle">
         <input
+          checked={settings.spokenPressEnterCommand}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("spokenPressEnterCommand", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Enable spoken "press enter" at the end of a recording</span>
+      </label>
+      <label className="toggle">
+        <input
           checked={settings.pauseBackgroundAudio}
           onChange={(event: ChangeEvent<HTMLInputElement>) =>
             update("pauseBackgroundAudio", event.target.checked)

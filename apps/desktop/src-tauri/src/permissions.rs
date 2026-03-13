@@ -74,6 +74,14 @@ pub fn simulate_paste() -> Result<(), String> {
     Ok(())
 }
 
+pub fn simulate_enter() -> Result<(), String> {
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|error| error.to_string())?;
+    enigo
+        .key(Key::Return, Direction::Click)
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
 pub fn frontmost_app() -> Result<Option<String>, String> {
     #[cfg(target_os = "macos")]
     {

@@ -26,6 +26,7 @@ export type PermissionState = "granted" | "denied" | "unknown";
 export interface Settings {
   hotkey: string;
   autoPaste: boolean;
+  spokenPressEnterCommand: boolean;
   pauseBackgroundAudio: boolean;
   warmModelOnLaunch: boolean;
   recordingCueVolume: number;

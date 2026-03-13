@@ -7,6 +7,7 @@ import * as recordingCues from "@/lib/recording-cues";
 const defaultSettings = {
   hotkey: "Option+Space",
   autoPaste: true,
+  spokenPressEnterCommand: false,
   pauseBackgroundAudio: true,
   warmModelOnLaunch: true,
   recordingCueVolume: 75,
@@ -69,6 +70,7 @@ function mockSuccessfulBootstrap() {
   vi.spyOn(desktop, "setClipboardText").mockResolvedValue(undefined);
   vi.spyOn(desktop, "restoreClipboard").mockResolvedValue(undefined);
   vi.spyOn(desktop, "simulatePaste").mockResolvedValue(undefined);
+  vi.spyOn(desktop, "simulateEnter").mockResolvedValue(undefined);
   vi.spyOn(desktop, "transcribeAudio").mockResolvedValue({
     raw_text: "hey can you send the update tomorrow",
     language: "en",
@@ -244,13 +246,18 @@ describe("App", () => {
       "Paste automatically after cleanup",
     );
     const cueCheckbox = await screen.findByLabelText("Play recording cue");
+    const pressEnterCheckbox = await screen.findByLabelText(
+      'Enable spoken "press enter" at the end of a recording',
+    );
     expect(autoPasteCheckbox).toBeChecked();
     expect(cueCheckbox).toBeChecked();
+    expect(pressEnterCheckbox).not.toBeChecked();
 
     act(() => {
       traySettingsHandler?.({
         ...defaultSettings,
         autoPaste: false,
+        spokenPressEnterCommand: true,
         recordingCueVolume: 0,
         restoreClipboard: false,
         saveHistory: false,
@@ -262,6 +269,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(autoPasteCheckbox).not.toBeChecked();
       expect(cueCheckbox).not.toBeChecked();
+      expect(pressEnterCheckbox).toBeChecked();
       expect(screen.getByLabelText("Restore clipboard after paste")).not.toBeChecked();
       expect(screen.getByLabelText("Save recent dictation history")).not.toBeChecked();
       expect(
@@ -344,6 +352,92 @@ describe("App", () => {
         expect.objectContaining({ recordingCueVolume: 0 }),
       );
     });
+  });
+
+  it('persists the spoken "press enter" setting from the settings checkbox', async () => {
+    render(<App />);
+
+    const checkbox = await screen.findByLabelText(
+      'Enable spoken "press enter" at the end of a recording',
+    );
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ spokenPressEnterCommand: true }),
+      );
+    });
+  });
+
+  it('presses Enter when a recording ends with "press enter" and the setting is enabled', async () => {
+    vi.spyOn(desktop, "getSettings").mockResolvedValue({
+      ...defaultSettings,
+      spokenPressEnterCommand: true,
+    });
+    vi.spyOn(desktop, "transcribeAudio").mockResolvedValue({
+      raw_text: "send the update press enter",
+      language: "en",
+      duration_ms: 450,
+      provider: "mock",
+    });
+    vi.spyOn(desktop, "cleanupText").mockResolvedValue({
+      clean_text: "Send the update.",
+      provider: "mock",
+    });
+
+    render(<App />);
+
+    const holdButton = await screen.findByRole("button", { name: "Hold to Record" });
+    fireEvent.mouseDown(holdButton);
+    fireEvent.mouseUp(await screen.findByRole("button", { name: "Release to Transcribe" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Inserted")).toBeVisible();
+    });
+
+    expect(desktop.cleanupText).toHaveBeenCalledWith(
+      "send the update",
+      "default",
+      "TextEdit",
+    );
+    expect(desktop.simulatePaste).toHaveBeenCalledTimes(1);
+    expect(desktop.simulateEnter).toHaveBeenCalledTimes(1);
+    expect(screen.getAllByText("Send the update.").length).toBeGreaterThan(0);
+  });
+
+  it('allows a command-only "press enter" recording when the setting is enabled', async () => {
+    vi.spyOn(desktop, "getSettings").mockResolvedValue({
+      ...defaultSettings,
+      spokenPressEnterCommand: true,
+    });
+    vi.spyOn(desktop, "transcribeAudio").mockResolvedValue({
+      raw_text: "press enter",
+      language: "en",
+      duration_ms: 450,
+      provider: "mock",
+    });
+    vi.spyOn(desktop, "cleanupText").mockResolvedValue({
+      clean_text: "",
+      provider: "mock",
+    });
+
+    render(<App />);
+
+    const holdButton = await screen.findByRole("button", { name: "Hold to Record" });
+    fireEvent.mouseDown(holdButton);
+    fireEvent.mouseUp(await screen.findByRole("button", { name: "Release to Transcribe" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Inserted")).toBeVisible();
+    });
+
+    expect(desktop.simulatePaste).not.toHaveBeenCalled();
+    expect(desktop.simulateEnter).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByText(
+        "No speech was detected in the recording. Try speaking louder or checking the selected microphone.",
+      ),
+    ).not.toBeInTheDocument();
   });
 
   it("supports toggle mode when configured in settings", async () => {

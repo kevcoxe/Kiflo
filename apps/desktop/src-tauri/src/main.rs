@@ -32,6 +32,7 @@ const MENU_ITEM_MODE_CHAT: &str = "mode-chat";
 const MENU_ITEM_MODE_LIST: &str = "mode-list";
 const MENU_ITEM_SETTINGS_SUBMENU: &str = "settings-submenu";
 const MENU_ITEM_AUTO_PASTE: &str = "auto-paste";
+const MENU_ITEM_SPOKEN_PRESS_ENTER_COMMAND: &str = "spoken-press-enter-command";
 const MENU_ITEM_PAUSE_BACKGROUND_AUDIO: &str = "pause-background-audio";
 const MENU_ITEM_WARM_MODEL_ON_LAUNCH: &str = "warm-model-on-launch";
 const MENU_ITEM_PLAY_RECORDING_CUE: &str = "play-recording-cue";
@@ -228,6 +229,11 @@ fn simulate_paste() -> Result<(), String> {
 }
 
 #[tauri::command]
+fn simulate_enter() -> Result<(), String> {
+    permissions::simulate_enter()
+}
+
+#[tauri::command]
 fn quit_app(app: AppHandle) -> Result<(), String> {
     app.exit(0);
     Ok(())
@@ -334,6 +340,14 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         settings.auto_paste,
         None::<&str>,
     )?;
+    let spoken_press_enter_command = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_SPOKEN_PRESS_ENTER_COMMAND,
+        "Enable Spoken \"Press Enter\"",
+        true,
+        settings.spoken_press_enter_command,
+        None::<&str>,
+    )?;
     let warm_model_on_launch = CheckMenuItem::with_id(
         app,
         MENU_ITEM_WARM_MODEL_ON_LAUNCH,
@@ -412,6 +426,7 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         true,
         &[
             &auto_paste,
+            &spoken_press_enter_command,
             &pause_background_audio,
             &warm_model_on_launch,
             &play_recording_cue,
@@ -620,6 +635,11 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
                     settings.auto_paste = !settings.auto_paste;
                 });
             }
+            MENU_ITEM_SPOKEN_PRESS_ENTER_COMMAND => {
+                let _ = update_setting_from_tray(app, |settings| {
+                    settings.spoken_press_enter_command = !settings.spoken_press_enter_command;
+                });
+            }
             MENU_ITEM_WARM_MODEL_ON_LAUNCH => {
                 let _ = update_setting_from_tray(app, |settings| {
                     settings.warm_model_on_launch = !settings.warm_model_on_launch;
@@ -758,6 +778,7 @@ fn main() {
             set_clipboard_text,
             restore_clipboard,
             simulate_paste,
+            simulate_enter,
             quit_app,
             get_hud_state,
             show_hud_command,
