@@ -4,6 +4,12 @@ All notable changes to the shipped Tator desktop app are documented in this file
 
 The format is based on Keep a Changelog and adapted to this repository's tag-driven release workflow.
 
+## [0.2.0] - 2026-03-13
+
+### Changed
+- Add warm speech model on app launch setting
+- Sync the menu bar settings toggles with the main settings panel
+
 ## [0.1.8] - 2026-03-13
 
 ### Changed
