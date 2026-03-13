@@ -72,6 +72,7 @@ export interface HistoryMetrics {
   estimatedTypingTimeSavedMs: number;
   averageWordsPerSession: number;
   topWords: HistoryWordMetric[];
+  topMeaningfulWords: HistoryWordMetric[];
 }
 
 export interface TranscriptionResponse {

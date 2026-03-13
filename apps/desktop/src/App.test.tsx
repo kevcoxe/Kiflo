@@ -41,6 +41,7 @@ const defaultMetrics = {
   estimatedTypingTimeSavedMs: 0,
   averageWordsPerSession: 0,
   topWords: [],
+  topMeaningfulWords: [],
 };
 
 function mockSuccessfulBootstrap() {

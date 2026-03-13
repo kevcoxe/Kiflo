@@ -92,6 +92,7 @@ const DEFAULT_HISTORY_METRICS: HistoryMetrics = {
   estimatedTypingTimeSavedMs: 0,
   averageWordsPerSession: 0,
   topWords: [],
+  topMeaningfulWords: [],
 };
 
 const HUD_ERROR_FLASH_MS = 450;

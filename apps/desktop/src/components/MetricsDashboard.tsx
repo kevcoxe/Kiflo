@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { HistoryMetrics } from "@tator/shared-types";
 
 interface MetricsDashboardProps {
@@ -22,6 +23,13 @@ function formatDuration(milliseconds: number): string {
 }
 
 export function MetricsDashboard({ metrics }: MetricsDashboardProps) {
+  const [hideCommonWords, setHideCommonWords] = useState(true);
+  const visibleWords = hideCommonWords ? metrics.topMeaningfulWords : metrics.topWords;
+  const emptyMessage =
+    hideCommonWords && metrics.topWords.length > 0
+      ? "Only common words matched the current filter."
+      : "No spoken words yet.";
+
   return (
     <section className="panel">
       <div className="panel-header">
@@ -49,12 +57,23 @@ export function MetricsDashboard({ metrics }: MetricsDashboardProps) {
       </div>
 
       <div className="result-block">
-        <strong>Top words</strong>
-        {metrics.topWords.length === 0 ? (
-          <p className="muted">No spoken words yet.</p>
+        <div className="metrics-top-words-header">
+          <strong>Top words</strong>
+          <label className="toggle metrics-toggle">
+            <input
+              aria-label="Hide common words"
+              checked={hideCommonWords}
+              onChange={(event) => setHideCommonWords(event.target.checked)}
+              type="checkbox"
+            />
+            <span>Hide common words</span>
+          </label>
+        </div>
+        {visibleWords.length === 0 ? (
+          <p className="muted">{emptyMessage}</p>
         ) : (
           <ul className="word-chip-list" aria-label="Top spoken words">
-            {metrics.topWords.map((item) => (
+            {visibleWords.map((item) => (
               <li key={item.word} className="word-chip">
                 <span>{item.word}</span>
                 <em>{item.count}</em>

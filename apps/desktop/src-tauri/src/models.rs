@@ -80,6 +80,7 @@ pub struct HistoryMetrics {
     pub estimated_typing_time_saved_ms: i64,
     pub average_words_per_session: f64,
     pub top_words: Vec<HistoryWordMetric>,
+    pub top_meaningful_words: Vec<HistoryWordMetric>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
