@@ -17,6 +17,8 @@ import {
   onTrayToggleRecording,
   onTrayModeChange,
   onTraySettingsChange,
+  openAccessibilitySettings,
+  openMicrophoneSettings,
   getPermissionStatus,
   getSettings,
   hideHud,
@@ -24,6 +26,8 @@ import {
   setHudPhase,
   registerGlobalShortcut,
   restoreClipboard,
+  requestAccessibilityAccess,
+  requestMicrophoneAccess,
   setClipboardText,
   showHud,
   simulatePaste,
@@ -456,6 +460,15 @@ export function useDictationController() {
       return;
     }
 
+    if (
+      activeState.permissions.microphone !== "granted" ||
+      activeState.permissions.accessibility !== "granted"
+    ) {
+      setStatus("error");
+      setError("Grant microphone and accessibility permissions before recording.");
+      return;
+    }
+
     await beginRecording();
   }
 
@@ -478,7 +491,34 @@ export function useDictationController() {
       return;
     }
 
+    if (
+      activeState.permissions.microphone !== "granted" ||
+      activeState.permissions.accessibility !== "granted"
+    ) {
+      setStatus("error");
+      setError("Grant microphone and accessibility permissions before recording.");
+      return;
+    }
+
     await beginRecording();
+  }
+
+  async function openMicrophoneSystemSettings() {
+    await openMicrophoneSettings();
+  }
+
+  async function openAccessibilitySystemSettings() {
+    await openAccessibilitySettings();
+  }
+
+  async function promptMicrophonePermission() {
+    await requestMicrophoneAccess();
+    await refreshPermissions();
+  }
+
+  async function promptAccessibilityPermission() {
+    await requestAccessibilityAccess();
+    await refreshPermissions();
   }
 
   async function saveSettings(nextSettings: Settings) {
@@ -603,6 +643,11 @@ export function useDictationController() {
     stopHoldRecording,
     retryPaste,
     copyFallbackText,
+    refreshPermissions,
+    openMicrophoneSystemSettings,
+    openAccessibilitySystemSettings,
+    promptMicrophonePermission,
+    promptAccessibilityPermission,
     downloadModel: installModel,
   };
 }

@@ -25,6 +25,11 @@ function statusLabel(status: ReturnType<typeof useDictationController>["status"]
 export default function App() {
   const controller = useDictationController();
   const isHoldMode = controller.settings.interactionMode === "hold";
+  const microphoneGranted = controller.permissions.microphone === "granted";
+  const accessibilityGranted = controller.permissions.accessibility === "granted";
+  const permissionsReady = microphoneGranted && accessibilityGranted;
+  const recordButtonDisabled =
+    !controller.initialized || controller.status === "processing" || !permissionsReady;
 
   function handlePressStart(event: PointerEvent<HTMLButtonElement>) {
     if (!isHoldMode) {
@@ -116,7 +121,7 @@ export default function App() {
             className={`primary-button ${
               controller.status === "processing" ? "is-processing" : ""
             }`}
-            disabled={!controller.initialized || controller.status === "processing"}
+            disabled={recordButtonDisabled}
             onClick={() => {
               if (!isHoldMode) {
                 void controller.toggleRecording();
@@ -162,24 +167,60 @@ export default function App() {
         </div>
       </section>
 
-      <section className="grid-layout">
-        <section className="panel">
-          <div className="panel-header">
-            <h2>Permissions</h2>
-            <span>Best-effort status</span>
+      <section className="panel">
+        <div className="panel-header">
+          <h2>Permissions</h2>
+          <span>Best-effort status</span>
+        </div>
+        <dl className="permission-grid">
+          <div>
+            <dt>Microphone</dt>
+            <dd>{controller.permissions.microphone}</dd>
           </div>
-          <dl className="permission-grid">
-            <div>
-              <dt>Microphone</dt>
-              <dd>{controller.permissions.microphone}</dd>
+          <div>
+            <dt>Accessibility</dt>
+            <dd>{controller.permissions.accessibility}</dd>
+          </div>
+        </dl>
+        {!permissionsReady ? (
+          <div className="result-block permissions-callout">
+            <div className="permissions-copy">
+              <strong>Permissions required to continue</strong>
+              <p>
+                Grant microphone and accessibility access before using dictation. Open
+                the relevant macOS privacy panes, then refresh once access has been
+                granted.
+              </p>
             </div>
-            <div>
-              <dt>Accessibility</dt>
-              <dd>{controller.permissions.accessibility}</dd>
+            <div className="permissions-actions">
+              {microphoneGranted ? null : (
+                <button
+                  className="primary-button"
+                  onClick={() => void controller.openMicrophoneSystemSettings()}
+                  type="button"
+                >
+                  Open Microphone Settings
+                </button>
+              )}
+              {accessibilityGranted ? null : (
+                <button
+                  className="primary-button"
+                  onClick={() => void controller.openAccessibilitySystemSettings()}
+                  type="button"
+                >
+                  Open Accessibility Settings
+                </button>
+              )}
+              <button
+                className="mode-select"
+                onClick={() => void controller.refreshPermissions()}
+                type="button"
+              >
+                Refresh Permissions
+              </button>
             </div>
-          </dl>
-        </section>
-
+          </div>
+        ) : null}
       </section>
 
       {controller.error ? <p className="error-banner">{controller.error}</p> : null}

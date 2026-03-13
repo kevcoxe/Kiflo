@@ -168,6 +168,26 @@ fn download_model(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+fn open_microphone_settings() -> Result<(), String> {
+    permissions::open_microphone_settings()
+}
+
+#[tauri::command]
+fn open_accessibility_settings() -> Result<(), String> {
+    permissions::open_accessibility_settings()
+}
+
+#[tauri::command]
+fn request_microphone_access() -> Result<(), String> {
+    permissions::request_microphone_access()
+}
+
+#[tauri::command]
+fn request_accessibility_access() -> Result<(), String> {
+    permissions::request_accessibility_access()
+}
+
+#[tauri::command]
 fn get_frontmost_app() -> Result<Option<String>, String> {
     permissions::frontmost_app()
 }
@@ -571,6 +591,10 @@ fn main() {
             cleanup_text,
             get_model_status,
             download_model,
+            open_microphone_settings,
+            open_accessibility_settings,
+            request_microphone_access,
+            request_accessibility_access,
             get_frontmost_app,
             capture_clipboard,
             set_clipboard_text,

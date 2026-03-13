@@ -195,6 +195,27 @@ body.hud-window #root {
   gap: 0.3rem;
 }
 
+.permissions-callout {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 1rem 1.25rem;
+}
+
+.permissions-copy p {
+  margin: 0.35rem 0 0;
+}
+
+.permissions-actions {
+  display: grid;
+  gap: 0.75rem;
+  align-content: start;
+}
+
+.permissions-actions .primary-button,
+.permissions-actions .mode-select {
+  width: 100%;
+}
+
 .result-block + .result-block {
   margin-top: 0.85rem;
 }
@@ -442,6 +463,14 @@ body.hud-window #root {
   .button-row {
     width: 100%;
     margin-left: 0;
+  }
+
+  .permissions-callout {
+    grid-template-columns: 1fr;
+  }
+
+  .permissions-actions {
+    width: 100%;
   }
 
   .primary-button {

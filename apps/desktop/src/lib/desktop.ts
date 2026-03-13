@@ -132,6 +132,22 @@ export async function downloadModel(): Promise<void> {
   return invokeDesktop("download_model");
 }
 
+export async function openMicrophoneSettings(): Promise<void> {
+  return invokeDesktop("open_microphone_settings");
+}
+
+export async function openAccessibilitySettings(): Promise<void> {
+  return invokeDesktop("open_accessibility_settings");
+}
+
+export async function requestMicrophoneAccess(): Promise<void> {
+  return invokeDesktop("request_microphone_access");
+}
+
+export async function requestAccessibilityAccess(): Promise<void> {
+  return invokeDesktop("request_accessibility_access");
+}
+
 export async function getFrontmostApp(): Promise<string | null> {
   return invokeDesktop<string | null>("get_frontmost_app");
 }

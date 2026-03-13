@@ -34,6 +34,10 @@ function mockSuccessfulBootstrap() {
   vi.spyOn(desktop, "getPermissionStatus").mockResolvedValue(defaultPermissions);
   vi.spyOn(desktop, "getModelStatus").mockResolvedValue(defaultModelStatus);
   vi.spyOn(desktop, "downloadModel").mockResolvedValue(undefined);
+  vi.spyOn(desktop, "openAccessibilitySettings").mockResolvedValue(undefined);
+  vi.spyOn(desktop, "openMicrophoneSettings").mockResolvedValue(undefined);
+  vi.spyOn(desktop, "requestMicrophoneAccess").mockResolvedValue(undefined);
+  vi.spyOn(desktop, "requestAccessibilityAccess").mockResolvedValue(undefined);
   vi.spyOn(desktop, "listHistory").mockResolvedValue([]);
   vi.spyOn(desktop, "updateSettings").mockImplementation(async (settings) => settings);
   vi.spyOn(desktop, "registerGlobalShortcut").mockResolvedValue(undefined);
@@ -312,6 +316,32 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByText("Inserted")).toBeVisible();
     });
+  });
+
+  it("blocks recording until permissions are granted and offers recovery actions", async () => {
+    vi.spyOn(desktop, "getPermissionStatus").mockResolvedValue({
+      microphone: "unknown",
+      accessibility: "denied",
+    });
+
+    render(<App />);
+
+    const disabledButton = await screen.findByRole("button", { name: "Hold to Record" });
+    expect(disabledButton).toBeDisabled();
+    expect(await screen.findByText("Permissions required to continue")).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Microphone Settings" }));
+    await waitFor(() => {
+      expect(desktop.openMicrophoneSettings).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Accessibility Settings" }));
+    await waitFor(() => {
+      expect(desktop.openAccessibilitySettings).toHaveBeenCalledTimes(1);
+    });
+
+    expect(screen.queryByRole("button", { name: "Request Microphone Access" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Request Accessibility Access" })).toBeNull();
   });
 
   it("does not show the HUD when the setting is disabled", async () => {
