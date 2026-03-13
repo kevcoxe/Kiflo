@@ -214,6 +214,16 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
       </label>
       <label className="toggle">
         <input
+          checked={settings.autoBacktrack}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("autoBacktrack", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Enable Auto Backtrack for spoken corrections</span>
+      </label>
+      <label className="toggle">
+        <input
           checked={settings.spokenPressEnterCommand}
           onChange={(event: ChangeEvent<HTMLInputElement>) =>
             update("spokenPressEnterCommand", event.target.checked)
