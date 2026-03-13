@@ -32,6 +32,80 @@ const MLX_PROVIDER: &str = "mlx_whisper";
 const QUESTION_OPENERS: &[&str] = &[
     "can", "could", "would", "will", "should", "is", "are", "do", "does", "did",
 ];
+const SPOKEN_CORRECTION_ANCHORS: &[&str] = &[
+    "a", "an", "the", "some", "my", "your", "our", "to", "at", "on", "in", "for", "with", "from",
+];
+const VALUE_LIKE_TOKENS: &[&str] = &[
+    "zero",
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+    "eleven",
+    "twelve",
+    "thirteen",
+    "fourteen",
+    "fifteen",
+    "sixteen",
+    "seventeen",
+    "eighteen",
+    "nineteen",
+    "twenty",
+    "thirty",
+    "forty",
+    "fifty",
+    "sixty",
+    "seventy",
+    "eighty",
+    "ninety",
+    "hundred",
+    "thousand",
+    "today",
+    "tomorrow",
+    "tonight",
+    "yesterday",
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+    "january",
+    "february",
+    "march",
+    "april",
+    "may",
+    "june",
+    "july",
+    "august",
+    "september",
+    "october",
+    "november",
+    "december",
+    "morning",
+    "afternoon",
+    "evening",
+    "night",
+    "noon",
+    "midnight",
+    "week",
+    "month",
+    "year",
+    "next",
+    "last",
+    "this",
+    "coming",
+    "am",
+    "pm",
+];
+const VALUE_LIKE_CONNECTORS: &[&str] = &["and", "or"];
 
 pub struct ModelRuntimeState {
     pub downloading: bool,
@@ -272,9 +346,16 @@ pub fn cleanup_text(
     raw_text: &str,
     mode: DictationMode,
     preserve_raw: bool,
+    auto_backtrack: bool,
     custom_dictionary: &str,
 ) -> CleanupResponse {
-    let text = apply_custom_dictionary(&normalize_text(raw_text, preserve_raw), custom_dictionary);
+    let normalized = normalize_text(raw_text, preserve_raw);
+    let corrected = if preserve_raw || !auto_backtrack {
+        normalized
+    } else {
+        apply_spoken_corrections(&normalized)
+    };
+    let text = apply_custom_dictionary(&corrected, custom_dictionary);
     let clean_text = if matches!(mode, DictationMode::BulletList) {
         format_bullets(&text).unwrap_or_else(|| format_sentence(&text, mode))
     } else {
@@ -635,6 +716,202 @@ fn normalize_text(raw_text: &str, preserve_raw: bool) -> String {
     collapse_whitespace(&cleaned.join(" "))
         .trim_matches(|character| character == ' ' || character == ',')
         .to_string()
+}
+
+fn apply_spoken_corrections(text: &str) -> String {
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    if tokens.is_empty() {
+        return String::new();
+    }
+
+    let mut corrected = Vec::with_capacity(tokens.len());
+    let mut index = 0;
+    let mut saw_cue = false;
+
+    while index < tokens.len() {
+        if let Some(cue_length) = spoken_correction_cue_length(&tokens, index) {
+            saw_cue = true;
+            let replacement_start = index + cue_length;
+            let replacement_end = next_spoken_correction_cue_index(&tokens, replacement_start);
+            let replacement_tokens = tokens[replacement_start..replacement_end]
+                .iter()
+                .map(|token| (*token).to_string())
+                .collect::<Vec<_>>();
+
+            if replacement_tokens.is_empty()
+                || !replace_trailing_phrase(&mut corrected, &replacement_tokens)
+            {
+                corrected.extend(
+                    tokens[index..replacement_end]
+                        .iter()
+                        .map(|token| (*token).to_string()),
+                );
+            }
+
+            index = replacement_end;
+            continue;
+        }
+
+        corrected.push(tokens[index].to_string());
+        index += 1;
+    }
+
+    if !saw_cue {
+        return text.to_string();
+    }
+
+    collapse_whitespace(&corrected.join(" "))
+}
+
+fn spoken_correction_cue_length(tokens: &[&str], index: usize) -> Option<usize> {
+    let word = tokens.get(index).map(|token| normalize_word(token))?;
+    if word == "actually" {
+        return Some(1);
+    }
+
+    if word == "i"
+        && tokens
+            .get(index + 1)
+            .map(|token| normalize_word(token) == "mean")
+            .unwrap_or(false)
+    {
+        return Some(2);
+    }
+
+    None
+}
+
+fn next_spoken_correction_cue_index(tokens: &[&str], start: usize) -> usize {
+    for index in start..tokens.len() {
+        if spoken_correction_cue_length(tokens, index).is_some() {
+            return index;
+        }
+    }
+
+    tokens.len()
+}
+
+fn replace_trailing_phrase(current: &mut Vec<String>, replacement: &[String]) -> bool {
+    if current.is_empty() || replacement.is_empty() {
+        return false;
+    }
+
+    let span = if phrase_is_value_like(replacement) {
+        find_trailing_value_span(current)
+    } else {
+        find_anchor_span(current).or_else(|| find_trailing_content_span(current, replacement))
+    };
+
+    let Some((start, end)) = span else {
+        return false;
+    };
+
+    current.splice(start..end, replacement.iter().cloned());
+    true
+}
+
+fn find_trailing_value_span(tokens: &[String]) -> Option<(usize, usize)> {
+    let mut start = tokens.len();
+    while start > 0 && token_is_value_like_component(&tokens[start - 1]) {
+        start -= 1;
+    }
+
+    if start == tokens.len() || !has_concrete_value_token(&tokens[start..]) {
+        None
+    } else {
+        Some((start, tokens.len()))
+    }
+}
+
+fn find_anchor_span(tokens: &[String]) -> Option<(usize, usize)> {
+    for index in (0..tokens.len()).rev() {
+        if !token_is_anchor(&tokens[index]) {
+            continue;
+        }
+
+        let trailing = tokens.len().saturating_sub(index + 1);
+        if (1..=3).contains(&trailing) && index >= tokens.len().saturating_sub(4) {
+            return Some((index + 1, tokens.len()));
+        }
+
+        return None;
+    }
+
+    None
+}
+
+fn find_trailing_content_span(tokens: &[String], replacement: &[String]) -> Option<(usize, usize)> {
+    let desired = replacement
+        .iter()
+        .filter(|token| token_is_content_word(token))
+        .count()
+        .clamp(1, 3);
+    let mut start = tokens.len();
+    let mut content_words = 0;
+
+    while start > 0 {
+        let previous = start - 1;
+        if token_is_anchor(&tokens[previous]) {
+            break;
+        }
+
+        start = previous;
+        if token_is_content_word(&tokens[start]) {
+            content_words += 1;
+            if content_words >= desired {
+                break;
+            }
+        }
+    }
+
+    if content_words == 0 {
+        None
+    } else {
+        Some((start, tokens.len()))
+    }
+}
+
+fn phrase_is_value_like(tokens: &[String]) -> bool {
+    !tokens.is_empty()
+        && tokens
+            .iter()
+            .all(|token| token_is_value_like_component(token))
+        && has_concrete_value_token(tokens)
+}
+
+fn has_concrete_value_token(tokens: &[String]) -> bool {
+    tokens.iter().any(|token| token_is_concrete_value(token))
+}
+
+fn token_is_value_like_component(token: &str) -> bool {
+    let normalized = normalize_word(token);
+    !normalized.is_empty()
+        && (token_is_concrete_value(token) || VALUE_LIKE_CONNECTORS.contains(&normalized.as_str()))
+}
+
+fn token_is_concrete_value(token: &str) -> bool {
+    let normalized = normalize_word(token);
+    !normalized.is_empty()
+        && (looks_numeric_like(&normalized) || VALUE_LIKE_TOKENS.contains(&normalized.as_str()))
+}
+
+fn looks_numeric_like(word: &str) -> bool {
+    word.chars().any(|character| character.is_ascii_digit())
+        || word.contains(':')
+        || word.ends_with("am")
+        || word.ends_with("pm")
+}
+
+fn token_is_anchor(token: &str) -> bool {
+    let normalized = normalize_word(token);
+    SPOKEN_CORRECTION_ANCHORS.contains(&normalized.as_str())
+}
+
+fn token_is_content_word(token: &str) -> bool {
+    let normalized = normalize_word(token);
+    !normalized.is_empty()
+        && !token_is_anchor(token)
+        && !VALUE_LIKE_CONNECTORS.contains(&normalized.as_str())
 }
 
 fn apply_custom_dictionary(text: &str, custom_dictionary: &str) -> String {
@@ -1275,6 +1552,7 @@ mod tests {
             "um can you send the update tomorrow",
             DictationMode::Default,
             false,
+            false,
             "",
         );
         assert_eq!(result.clean_text, "Can you send the update tomorrow?");
@@ -1285,6 +1563,7 @@ mod tests {
         let result = cleanup_text(
             "running five minutes late be there soon",
             DictationMode::Chat,
+            false,
             false,
             "",
         );
@@ -1300,6 +1579,7 @@ mod tests {
             "make a list eggs milk bread and apples",
             DictationMode::BulletList,
             false,
+            false,
             "",
         );
         assert_eq!(result.clean_text, "- Eggs\n- Milk\n- Bread\n- Apples");
@@ -1307,13 +1587,13 @@ mod tests {
 
     #[test]
     fn cleanup_preserves_raw_text_when_requested() {
-        let result = cleanup_text(" um hello there ", DictationMode::Default, true, "");
+        let result = cleanup_text(" um hello there ", DictationMode::Default, true, false, "");
         assert_eq!(result.clean_text, "Um hello there.");
     }
 
     #[test]
     fn cleanup_can_return_empty_text_for_empty_input() {
-        let result = cleanup_text("   ", DictationMode::Default, false, "");
+        let result = cleanup_text("   ", DictationMode::Default, false, false, "");
         assert_eq!(result.clean_text, "");
     }
 
@@ -1322,6 +1602,7 @@ mod tests {
         let result = cleanup_text(
             "send the update to rebecca tomorrow",
             DictationMode::Default,
+            false,
             false,
             "Rebecca => Rebekah",
         );
@@ -1334,12 +1615,91 @@ mod tests {
             "rebecca told rebeccas about new york city hall",
             DictationMode::Default,
             false,
+            false,
             "Rebecca => Rebekah\nnew york => NYC",
         );
         assert_eq!(
             result.clean_text,
             "Rebekah told rebeccas about NYC city hall."
         );
+    }
+
+    #[test]
+    fn cleanup_auto_backtrack_replaces_trailing_value_spans() {
+        let result = cleanup_text(
+            "let's meet at 2 actually 3",
+            DictationMode::Default,
+            false,
+            true,
+            "",
+        );
+        assert_eq!(result.clean_text, "Let's meet at 3.");
+    }
+
+    #[test]
+    fn cleanup_auto_backtrack_replaces_trailing_phrase_after_anchor() {
+        let result = cleanup_text(
+            "i want to get some chicken i mean potatoes",
+            DictationMode::Default,
+            false,
+            true,
+            "",
+        );
+        assert_eq!(result.clean_text, "I want to get some potatoes.");
+    }
+
+    #[test]
+    fn cleanup_auto_backtrack_processes_multiple_corrections_left_to_right() {
+        let result = cleanup_text(
+            "let's meet at 2 actually 3 i mean 4",
+            DictationMode::Default,
+            false,
+            true,
+            "",
+        );
+        assert_eq!(result.clean_text, "Let's meet at 4.");
+    }
+
+    #[test]
+    fn cleanup_auto_backtrack_can_be_disabled() {
+        let result = cleanup_text(
+            "let's meet at 2 actually 3",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+        );
+        assert_eq!(result.clean_text, "Let's meet at 2 actually 3.");
+    }
+
+    #[test]
+    fn cleanup_auto_backtrack_is_skipped_for_preserved_raw_text() {
+        let result = cleanup_text(
+            "let's meet at 2 actually 3",
+            DictationMode::Default,
+            true,
+            true,
+            "",
+        );
+        assert_eq!(result.clean_text, "Let's meet at 2 actually 3.");
+    }
+
+    #[test]
+    fn cleanup_auto_backtrack_falls_back_when_no_replaceable_span_exists() {
+        let result = cleanup_text("actually potatoes", DictationMode::Default, false, true, "");
+        assert_eq!(result.clean_text, "Actually potatoes.");
+    }
+
+    #[test]
+    fn cleanup_auto_backtrack_runs_before_custom_dictionary() {
+        let result = cleanup_text(
+            "send the update to rebecca actually katherine",
+            DictationMode::Default,
+            false,
+            true,
+            "Katherine => Kathryn",
+        );
+        assert_eq!(result.clean_text, "Send the update to Kathryn.");
     }
 
     #[test]

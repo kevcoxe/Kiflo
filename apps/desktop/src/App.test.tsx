@@ -7,6 +7,7 @@ import * as recordingCues from "@/lib/recording-cues";
 const defaultSettings = {
   hotkey: "Option+Space",
   autoPaste: true,
+  autoBacktrack: false,
   spokenPressEnterCommand: false,
   pauseBackgroundAudio: true,
   warmModelOnLaunch: true,
@@ -247,17 +248,22 @@ describe("App", () => {
       "Paste automatically after cleanup",
     );
     const cueCheckbox = await screen.findByLabelText("Play recording cue");
+    const autoBacktrackCheckbox = await screen.findByLabelText(
+      "Enable Auto Backtrack for spoken corrections",
+    );
     const pressEnterCheckbox = await screen.findByLabelText(
       'Enable spoken "press enter" at the end of a recording',
     );
     expect(autoPasteCheckbox).toBeChecked();
     expect(cueCheckbox).toBeChecked();
+    expect(autoBacktrackCheckbox).not.toBeChecked();
     expect(pressEnterCheckbox).not.toBeChecked();
 
     act(() => {
       traySettingsHandler?.({
         ...defaultSettings,
         autoPaste: false,
+        autoBacktrack: true,
         spokenPressEnterCommand: true,
         recordingCueVolume: 0,
         restoreClipboard: false,
@@ -270,6 +276,7 @@ describe("App", () => {
     await waitFor(() => {
       expect(autoPasteCheckbox).not.toBeChecked();
       expect(cueCheckbox).not.toBeChecked();
+      expect(autoBacktrackCheckbox).toBeChecked();
       expect(pressEnterCheckbox).toBeChecked();
       expect(screen.getByLabelText("Restore clipboard after paste")).not.toBeChecked();
       expect(screen.getByLabelText("Save recent dictation history")).not.toBeChecked();
@@ -386,6 +393,21 @@ describe("App", () => {
     await waitFor(() => {
       expect(desktop.updateSettings).toHaveBeenCalledWith(
         expect.objectContaining({ spokenPressEnterCommand: true }),
+      );
+    });
+  });
+
+  it("persists the Auto Backtrack setting from the settings checkbox", async () => {
+    render(<App />);
+
+    const checkbox = await screen.findByLabelText(
+      "Enable Auto Backtrack for spoken corrections",
+    );
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ autoBacktrack: true }),
       );
     });
   });

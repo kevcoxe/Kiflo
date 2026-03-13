@@ -56,6 +56,7 @@ export type WorkflowStatus =
 const DEFAULT_SETTINGS: Settings = {
   hotkey: "Option+Space",
   autoPaste: true,
+  autoBacktrack: false,
   spokenPressEnterCommand: false,
   pauseBackgroundAudio: true,
   warmModelOnLaunch: true,

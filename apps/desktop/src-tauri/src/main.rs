@@ -32,6 +32,7 @@ const MENU_ITEM_MODE_CHAT: &str = "mode-chat";
 const MENU_ITEM_MODE_LIST: &str = "mode-list";
 const MENU_ITEM_SETTINGS_SUBMENU: &str = "settings-submenu";
 const MENU_ITEM_AUTO_PASTE: &str = "auto-paste";
+const MENU_ITEM_AUTO_BACKTRACK: &str = "auto-backtrack";
 const MENU_ITEM_SPOKEN_PRESS_ENTER_COMMAND: &str = "spoken-press-enter-command";
 const MENU_ITEM_PAUSE_BACKGROUND_AUDIO: &str = "pause-background-audio";
 const MENU_ITEM_WARM_MODEL_ON_LAUNCH: &str = "warm-model-on-launch";
@@ -164,6 +165,7 @@ fn cleanup_text(
         &raw_text,
         mode,
         preserve_raw.unwrap_or(false),
+        settings.auto_backtrack,
         &settings.custom_dictionary,
     ))
 }
@@ -343,6 +345,14 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         settings.auto_paste,
         None::<&str>,
     )?;
+    let auto_backtrack = CheckMenuItem::with_id(
+        app,
+        MENU_ITEM_AUTO_BACKTRACK,
+        "Enable Auto Backtrack",
+        true,
+        settings.auto_backtrack,
+        None::<&str>,
+    )?;
     let spoken_press_enter_command = CheckMenuItem::with_id(
         app,
         MENU_ITEM_SPOKEN_PRESS_ENTER_COMMAND,
@@ -429,6 +439,7 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         true,
         &[
             &auto_paste,
+            &auto_backtrack,
             &spoken_press_enter_command,
             &pause_background_audio,
             &warm_model_on_launch,
@@ -636,6 +647,11 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             MENU_ITEM_AUTO_PASTE => {
                 let _ = update_setting_from_tray(app, |settings| {
                     settings.auto_paste = !settings.auto_paste;
+                });
+            }
+            MENU_ITEM_AUTO_BACKTRACK => {
+                let _ = update_setting_from_tray(app, |settings| {
+                    settings.auto_backtrack = !settings.auto_backtrack;
                 });
             }
             MENU_ITEM_SPOKEN_PRESS_ENTER_COMMAND => {
