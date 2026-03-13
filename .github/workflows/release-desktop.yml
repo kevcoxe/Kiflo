@@ -57,14 +57,16 @@ jobs:
 
           const cargoTomlPath = "apps/desktop/src-tauri/Cargo.toml";
           const cargoToml = fs.readFileSync(cargoTomlPath, "utf8");
+          const versionPattern = /^version = ".*"$/m;
+
+          if (!versionPattern.test(cargoToml)) {
+            throw new Error("Could not find a version entry in apps/desktop/src-tauri/Cargo.toml");
+          }
+
           const updatedCargoToml = cargoToml.replace(
-            /^version = ".*"$/m,
+            versionPattern,
             `version = "${version}"`,
           );
-
-          if (cargoToml === updatedCargoToml) {
-            throw new Error("Failed to update version in apps/desktop/src-tauri/Cargo.toml");
-          }
 
           fs.writeFileSync(cargoTomlPath, updatedCargoToml);
           EOF
