@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS settings (
   restore_clipboard INTEGER NOT NULL,
   interaction_mode TEXT NOT NULL DEFAULT 'hold',
   preferred_mode TEXT NOT NULL,
+  typing_style TEXT NOT NULL DEFAULT 'formal',
   custom_dictionary TEXT NOT NULL DEFAULT '',
   save_history INTEGER NOT NULL,
   hide_dock_icon INTEGER NOT NULL DEFAULT 0,
@@ -60,7 +61,7 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
     let connection = open(path)?;
     let mut settings = connection
         .query_row(
-            "SELECT hotkey, auto_paste, auto_backtrack, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, custom_dictionary, save_history, hide_dock_icon, show_hud
+            "SELECT hotkey, auto_paste, auto_backtrack, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, typing_style, custom_dictionary, save_history, hide_dock_icon, show_hud
              FROM settings WHERE id = 1",
             [],
             |row| {
@@ -75,10 +76,11 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
                     restore_clipboard: row.get::<_, i64>(7)? != 0,
                     interaction_mode: row.get(8)?,
                     preferred_mode: row.get(9)?,
-                    custom_dictionary: row.get(10)?,
-                    save_history: row.get::<_, i64>(11)? != 0,
-                    hide_dock_icon: row.get::<_, i64>(12)? != 0,
-                    show_hud: row.get::<_, i64>(13)? != 0,
+                    typing_style: row.get(10)?,
+                    custom_dictionary: row.get(11)?,
+                    save_history: row.get::<_, i64>(12)? != 0,
+                    hide_dock_icon: row.get::<_, i64>(13)? != 0,
+                    show_hud: row.get::<_, i64>(14)? != 0,
                 })
             },
         )
@@ -360,12 +362,13 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 restore_clipboard,
                 interaction_mode,
                 preferred_mode,
+                typing_style,
                 custom_dictionary,
                 save_history,
                 hide_dock_icon,
                 show_hud
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
              ON CONFLICT(id) DO UPDATE SET
                 hotkey = excluded.hotkey,
                 auto_paste = excluded.auto_paste,
@@ -377,6 +380,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 restore_clipboard = excluded.restore_clipboard,
                 interaction_mode = excluded.interaction_mode,
                 preferred_mode = excluded.preferred_mode,
+                typing_style = excluded.typing_style,
                 custom_dictionary = excluded.custom_dictionary,
                 save_history = excluded.save_history,
                 hide_dock_icon = excluded.hide_dock_icon,
@@ -392,6 +396,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 bool_to_integer(settings.restore_clipboard),
                 settings.interaction_mode,
                 settings.preferred_mode,
+                settings.typing_style,
                 settings.custom_dictionary,
                 bool_to_integer(settings.save_history),
                 bool_to_integer(settings.hide_dock_icon),
@@ -459,6 +464,12 @@ fn ensure_settings_columns(connection: &Connection) -> Result<(), String> {
     add_column_if_missing(
         connection,
         "settings",
+        "typing_style",
+        "TEXT NOT NULL DEFAULT 'formal'",
+    )?;
+    add_column_if_missing(
+        connection,
+        "settings",
         "custom_dictionary",
         "TEXT NOT NULL DEFAULT ''",
     )
@@ -485,6 +496,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               restore_clipboard INTEGER NOT NULL,
               interaction_mode TEXT NOT NULL DEFAULT 'hold',
               preferred_mode TEXT NOT NULL,
+              typing_style TEXT NOT NULL DEFAULT 'formal',
               custom_dictionary TEXT NOT NULL DEFAULT '',
               save_history INTEGER NOT NULL,
               hide_dock_icon INTEGER NOT NULL DEFAULT 0,
@@ -502,6 +514,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               restore_clipboard,
               interaction_mode,
               preferred_mode,
+              typing_style,
               custom_dictionary,
               save_history,
               hide_dock_icon,
@@ -519,6 +532,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               restore_clipboard,
               COALESCE(interaction_mode, 'hold'),
               preferred_mode,
+              'formal',
               '',
               save_history,
               0,
@@ -589,15 +603,18 @@ fn bool_to_integer(value: bool) -> i64 {
 fn normalize_settings(settings: &mut Settings) -> bool {
     let normalized_dictionary = normalize_custom_dictionary(&settings.custom_dictionary);
     let normalized_mode = normalize_preferred_mode(&settings.preferred_mode);
+    let normalized_style = normalize_typing_style(&settings.typing_style);
     let dictionary_changed = normalized_dictionary != settings.custom_dictionary;
     let mode_changed = normalized_mode != settings.preferred_mode;
+    let style_changed = normalized_style != settings.typing_style;
 
-    if !dictionary_changed && !mode_changed {
+    if !dictionary_changed && !mode_changed && !style_changed {
         return false;
     }
 
     settings.custom_dictionary = normalized_dictionary;
     settings.preferred_mode = normalized_mode;
+    settings.typing_style = normalized_style;
     true
 }
 
@@ -614,6 +631,13 @@ fn normalize_preferred_mode(mode: &str) -> String {
         "notes" => "bullet_list".to_string(),
         "default" | "chat" | "bullet_list" => mode.to_string(),
         _ => "default".to_string(),
+    }
+}
+
+fn normalize_typing_style(style: &str) -> String {
+    match style {
+        "very_casual" | "formal" | "excited" => style.to_string(),
+        _ => "formal".to_string(),
     }
 }
 
@@ -649,6 +673,7 @@ mod tests {
         settings.pause_background_audio = false;
         settings.warm_model_on_launch = false;
         settings.recording_cue_volume = 0;
+        settings.typing_style = "excited".to_string();
         settings.custom_dictionary = "Rebecca => Rebekah  \nKatherine => Kathryn\t".to_string();
         settings.save_history = false;
         settings.hide_dock_icon = true;
@@ -664,6 +689,7 @@ mod tests {
         assert!(!loaded.pause_background_audio);
         assert!(!loaded.warm_model_on_launch);
         assert_eq!(loaded.recording_cue_volume, 0);
+        assert_eq!(loaded.typing_style, "excited");
         assert_eq!(
             loaded.custom_dictionary,
             "Rebecca => Rebekah\nKatherine => Kathryn"
@@ -757,6 +783,7 @@ mod tests {
         assert_eq!(migrated.hotkey, "Option+Space");
         assert!(!migrated.spoken_press_enter_command);
         assert!(migrated.warm_model_on_launch);
+        assert_eq!(migrated.typing_style, "formal");
         assert!(migrated.custom_dictionary.is_empty());
         assert!(!migrated.auto_backtrack);
         assert!(migrated.show_hud);
@@ -828,6 +855,34 @@ mod tests {
 
         let _ = fs::remove_file(path);
     }
+
+    #[test]
+    fn normalizes_invalid_typing_style_to_formal() {
+        let path = temp_db_path();
+        initialize(&path).unwrap();
+
+        let connection = open(&path).unwrap();
+        connection
+            .execute("UPDATE settings SET typing_style = 'loud' WHERE id = 1", [])
+            .unwrap();
+        drop(connection);
+
+        let settings = get_settings(&path).unwrap();
+        assert_eq!(settings.typing_style, "formal");
+
+        let persisted_style: String = open(&path)
+            .unwrap()
+            .query_row(
+                "SELECT typing_style FROM settings WHERE id = 1",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(persisted_style, "formal");
+
+        let _ = fs::remove_file(path);
+    }
+
     #[test]
     fn adds_auto_backtrack_column_for_existing_settings_tables() {
         let path = temp_db_path();
@@ -892,6 +947,8 @@ mod tests {
         let settings = get_settings(&path).unwrap();
         assert!(!settings.auto_backtrack);
         assert!(column_exists(&open(&path).unwrap(), "settings", "auto_backtrack").unwrap());
+        assert_eq!(settings.typing_style, "formal");
+        assert!(column_exists(&open(&path).unwrap(), "settings", "typing_style").unwrap());
 
         let _ = fs::remove_file(path);
     }

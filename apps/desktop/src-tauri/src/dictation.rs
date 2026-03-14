@@ -32,6 +32,22 @@ const MLX_PROVIDER: &str = "mlx_whisper";
 const QUESTION_OPENERS: &[&str] = &[
     "can", "could", "would", "will", "should", "is", "are", "do", "does", "did",
 ];
+const EXCITED_OPENERS: &[&str] = &[
+    "awesome",
+    "congrats",
+    "congratulations",
+    "excellent",
+    "great",
+    "hooray",
+    "love",
+    "nice",
+    "perfect",
+    "thanks",
+    "thank",
+    "woo",
+    "yay",
+];
+const EXCITED_PREFIXES: &[&str] = &["let's go", "sounds good", "so excited", "thank you"];
 const SPOKEN_CORRECTION_ANCHORS: &[&str] = &[
     "a", "an", "the", "some", "my", "your", "our", "to", "at", "on", "in", "for", "with", "from",
 ];
@@ -117,6 +133,23 @@ pub struct ModelRuntimeState {
 enum AsrProviderKind {
     Mock,
     MlxWhisper,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TypingStyle {
+    VeryCasual,
+    Formal,
+    Excited,
+}
+
+impl TypingStyle {
+    fn from_setting(value: &str) -> Self {
+        match value {
+            "very_casual" => Self::VeryCasual,
+            "excited" => Self::Excited,
+            _ => Self::Formal,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -348,7 +381,9 @@ pub fn cleanup_text(
     preserve_raw: bool,
     auto_backtrack: bool,
     custom_dictionary: &str,
+    typing_style: &str,
 ) -> CleanupResponse {
+    let style = TypingStyle::from_setting(typing_style);
     let normalized = normalize_text(raw_text, preserve_raw);
     let corrected = if preserve_raw || !auto_backtrack {
         normalized
@@ -357,9 +392,9 @@ pub fn cleanup_text(
     };
     let text = apply_custom_dictionary(&corrected, custom_dictionary);
     let clean_text = if matches!(mode, DictationMode::BulletList) {
-        format_bullets(&text).unwrap_or_else(|| format_sentence(&text, mode))
+        format_bullets(&text, style).unwrap_or_else(|| format_sentence(&text, mode, style))
     } else {
-        format_sentence(&text, mode)
+        format_sentence(&text, mode, style)
     };
 
     CleanupResponse {
@@ -1002,7 +1037,7 @@ struct DictionaryEntry {
     to: String,
 }
 
-fn format_bullets(text: &str) -> Option<String> {
+fn format_bullets(text: &str, style: TypingStyle) -> Option<String> {
     let candidate = strip_list_prefix(text);
     if candidate.is_empty() {
         return None;
@@ -1022,7 +1057,10 @@ fn format_bullets(text: &str) -> Option<String> {
     let cleaned = items
         .into_iter()
         .map(|item| {
-            sentence_case(item.trim_matches(|character| character == ' ' || character == '.'))
+            format_list_item(
+                item.trim_matches(|character| character == ' ' || character == '.'),
+                style,
+            )
         })
         .filter(|item| !item.is_empty())
         .collect::<Vec<_>>();
@@ -1040,29 +1078,82 @@ fn format_bullets(text: &str) -> Option<String> {
     )
 }
 
-fn format_sentence(text: &str, mode: DictationMode) -> String {
-    let mut sentence = sentence_case(text);
+fn format_sentence(text: &str, mode: DictationMode, style: TypingStyle) -> String {
+    let mut sentence = match style {
+        TypingStyle::VeryCasual => collapse_whitespace(text),
+        TypingStyle::Formal | TypingStyle::Excited => sentence_case(text),
+    };
     if sentence.is_empty() {
         return sentence;
     }
 
+    if matches!(style, TypingStyle::VeryCasual) {
+        return sentence;
+    }
+
+    let opener = sentence
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_lowercase();
+    let is_question =
+        !matches!(mode, DictationMode::Chat) && QUESTION_OPENERS.contains(&opener.as_str());
+
+    if matches!(style, TypingStyle::Excited) {
+        return excited_sentence(sentence, is_question);
+    }
+
     if !sentence.ends_with(['.', '!', '?']) {
-        let opener = sentence
-            .split_whitespace()
-            .next()
-            .unwrap_or_default()
-            .to_lowercase();
-        let punctuation = if matches!(mode, DictationMode::Chat)
-            || !QUESTION_OPENERS.contains(&opener.as_str())
-        {
-            '.'
-        } else {
-            '?'
-        };
+        let punctuation = if !is_question { '.' } else { '?' };
         sentence.push(punctuation);
     }
 
     sentence
+}
+
+fn format_list_item(text: &str, style: TypingStyle) -> String {
+    match style {
+        TypingStyle::VeryCasual => collapse_whitespace(text),
+        TypingStyle::Formal | TypingStyle::Excited => sentence_case(text),
+    }
+}
+
+fn excited_sentence(mut sentence: String, is_question: bool) -> String {
+    if sentence.ends_with('!') {
+        return sentence;
+    }
+
+    if sentence.ends_with('?') {
+        return sentence;
+    }
+
+    if sentence.ends_with('.') {
+        if should_use_excited_punctuation(&sentence) {
+            sentence.pop();
+            sentence.push('!');
+        }
+        return sentence;
+    }
+
+    if is_question {
+        sentence.push('?');
+    } else if should_use_excited_punctuation(&sentence) {
+        sentence.push('!');
+    } else {
+        sentence.push('.');
+    }
+
+    sentence
+}
+
+fn should_use_excited_punctuation(sentence: &str) -> bool {
+    let lowered = sentence.to_lowercase();
+    let opener = lowered.split_whitespace().next().unwrap_or_default();
+
+    EXCITED_OPENERS.contains(&opener)
+        || EXCITED_PREFIXES
+            .iter()
+            .any(|prefix| lowered.starts_with(prefix))
 }
 
 fn sentence_case(text: &str) -> String {
@@ -1554,6 +1645,7 @@ mod tests {
             false,
             false,
             "",
+            "formal",
         );
         assert_eq!(result.clean_text, "Can you send the update tomorrow?");
     }
@@ -1566,6 +1658,7 @@ mod tests {
             false,
             false,
             "",
+            "formal",
         );
         assert_eq!(
             result.clean_text,
@@ -1581,19 +1674,27 @@ mod tests {
             false,
             false,
             "",
+            "formal",
         );
         assert_eq!(result.clean_text, "- Eggs\n- Milk\n- Bread\n- Apples");
     }
 
     #[test]
     fn cleanup_preserves_raw_text_when_requested() {
-        let result = cleanup_text(" um hello there ", DictationMode::Default, true, false, "");
+        let result = cleanup_text(
+            " um hello there ",
+            DictationMode::Default,
+            true,
+            false,
+            "",
+            "formal",
+        );
         assert_eq!(result.clean_text, "Um hello there.");
     }
 
     #[test]
     fn cleanup_can_return_empty_text_for_empty_input() {
-        let result = cleanup_text("   ", DictationMode::Default, false, false, "");
+        let result = cleanup_text("   ", DictationMode::Default, false, false, "", "formal");
         assert_eq!(result.clean_text, "");
     }
 
@@ -1605,6 +1706,7 @@ mod tests {
             false,
             false,
             "Rebecca => Rebekah",
+            "formal",
         );
         assert_eq!(result.clean_text, "Send the update to Rebekah tomorrow.");
     }
@@ -1617,6 +1719,7 @@ mod tests {
             false,
             false,
             "Rebecca => Rebekah\nnew york => NYC",
+            "formal",
         );
         assert_eq!(
             result.clean_text,
@@ -1632,6 +1735,7 @@ mod tests {
             false,
             true,
             "",
+            "formal",
         );
         assert_eq!(result.clean_text, "Let's meet at 3.");
     }
@@ -1644,6 +1748,7 @@ mod tests {
             false,
             true,
             "",
+            "formal",
         );
         assert_eq!(result.clean_text, "I want to get some potatoes.");
     }
@@ -1656,6 +1761,7 @@ mod tests {
             false,
             true,
             "",
+            "formal",
         );
         assert_eq!(result.clean_text, "Let's meet at 4.");
     }
@@ -1668,6 +1774,7 @@ mod tests {
             false,
             false,
             "",
+            "formal",
         );
         assert_eq!(result.clean_text, "Let's meet at 2 actually 3.");
     }
@@ -1680,13 +1787,21 @@ mod tests {
             true,
             true,
             "",
+            "formal",
         );
         assert_eq!(result.clean_text, "Let's meet at 2 actually 3.");
     }
 
     #[test]
     fn cleanup_auto_backtrack_falls_back_when_no_replaceable_span_exists() {
-        let result = cleanup_text("actually potatoes", DictationMode::Default, false, true, "");
+        let result = cleanup_text(
+            "actually potatoes",
+            DictationMode::Default,
+            false,
+            true,
+            "",
+            "formal",
+        );
         assert_eq!(result.clean_text, "Actually potatoes.");
     }
 
@@ -1698,8 +1813,61 @@ mod tests {
             false,
             true,
             "Katherine => Kathryn",
+            "formal",
         );
         assert_eq!(result.clean_text, "Send the update to Kathryn.");
+    }
+
+    #[test]
+    fn cleanup_formats_very_casual_style() {
+        let result = cleanup_text(
+            "um can you send the update tomorrow",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+            "very_casual",
+        );
+        assert_eq!(result.clean_text, "can you send the update tomorrow");
+    }
+
+    #[test]
+    fn cleanup_formats_excited_style() {
+        let result = cleanup_text(
+            "can you send the update tomorrow",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+            "excited",
+        );
+        assert_eq!(result.clean_text, "Can you send the update tomorrow?");
+    }
+
+    #[test]
+    fn cleanup_uses_exclamation_for_upbeat_excited_style() {
+        let result = cleanup_text(
+            "thanks for the quick turnaround",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+            "excited",
+        );
+        assert_eq!(result.clean_text, "Thanks for the quick turnaround!");
+    }
+
+    #[test]
+    fn cleanup_formats_very_casual_bullet_lists() {
+        let result = cleanup_text(
+            "make a list eggs milk bread and apples",
+            DictationMode::BulletList,
+            false,
+            false,
+            "",
+            "very_casual",
+        );
+        assert_eq!(result.clean_text, "- eggs\n- milk\n- bread\n- apples");
     }
 
     #[test]

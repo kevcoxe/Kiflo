@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   DICTATION_MODES,
   RECORDING_INTERACTION_MODES,
+  TYPING_STYLES,
   type Settings,
 } from "@tator/shared-types";
 
@@ -127,6 +128,24 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
           {DICTATION_MODES.map((mode) => (
             <option key={mode} value={mode}>
               {mode}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="field">
+        <span>Typing style</span>
+        <p className="field-help muted">
+          Go formal in docs, very casual in messages, or excited in upbeat notes.
+        </p>
+        <select
+          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+            update("typingStyle", event.target.value as Settings["typingStyle"])
+          }
+          value={settings.typingStyle}
+        >
+          {TYPING_STYLES.map((style) => (
+            <option key={style} value={style}>
+              {labelForTypingStyle(style)}
             </option>
           ))}
         </select>
@@ -365,4 +384,15 @@ function serializeCustomDictionary(rows: DictionaryRow[]): string {
     .filter((row) => row.source && row.replacement)
     .map((row) => `${row.source} => ${row.replacement}`)
     .join("\n");
+}
+
+function labelForTypingStyle(style: Settings["typingStyle"]): string {
+  switch (style) {
+    case "very_casual":
+      return "Very casual";
+    case "formal":
+      return "Formal";
+    case "excited":
+      return "Excited";
+  }
 }

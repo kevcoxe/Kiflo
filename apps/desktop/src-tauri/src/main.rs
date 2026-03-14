@@ -30,6 +30,10 @@ const MENU_ITEM_MODE_SUBMENU: &str = "mode-submenu";
 const MENU_ITEM_MODE_DEFAULT: &str = "mode-default";
 const MENU_ITEM_MODE_CHAT: &str = "mode-chat";
 const MENU_ITEM_MODE_LIST: &str = "mode-list";
+const MENU_ITEM_STYLE_SUBMENU: &str = "style-submenu";
+const MENU_ITEM_STYLE_VERY_CASUAL: &str = "style-very-casual";
+const MENU_ITEM_STYLE_FORMAL: &str = "style-formal";
+const MENU_ITEM_STYLE_EXCITED: &str = "style-excited";
 const MENU_ITEM_SETTINGS_SUBMENU: &str = "settings-submenu";
 const MENU_ITEM_AUTO_PASTE: &str = "auto-paste";
 const MENU_ITEM_AUTO_BACKTRACK: &str = "auto-backtrack";
@@ -172,6 +176,7 @@ fn cleanup_text(
         preserve_raw.unwrap_or(false),
         settings.auto_backtrack,
         &settings.custom_dictionary,
+        &settings.typing_style,
     ))
 }
 
@@ -309,6 +314,38 @@ fn tray_mode_menu_items(
     ])
 }
 
+fn tray_style_menu_items(
+    app: &AppHandle,
+    typing_style: &str,
+) -> tauri::Result<[CheckMenuItem<tauri::Wry>; 3]> {
+    Ok([
+        CheckMenuItem::with_id(
+            app,
+            MENU_ITEM_STYLE_VERY_CASUAL,
+            "Very casual",
+            true,
+            typing_style == "very_casual",
+            None::<&str>,
+        )?,
+        CheckMenuItem::with_id(
+            app,
+            MENU_ITEM_STYLE_FORMAL,
+            "Formal",
+            true,
+            typing_style == "formal",
+            None::<&str>,
+        )?,
+        CheckMenuItem::with_id(
+            app,
+            MENU_ITEM_STYLE_EXCITED,
+            "Excited",
+            true,
+            typing_style == "excited",
+            None::<&str>,
+        )?,
+    ])
+}
+
 fn interaction_mode_for_menu_item(menu_id: &str) -> Option<&'static str> {
     match menu_id {
         MENU_ITEM_INTERACTION_HOLD => Some("hold"),
@@ -333,6 +370,15 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         "Mode",
         true,
         &[&default_mode, &chat_mode, &list_mode],
+    )?;
+    let [very_casual_style, formal_style, excited_style] =
+        tray_style_menu_items(app, &settings.typing_style)?;
+    let style_menu = Submenu::with_id_and_items(
+        app,
+        MENU_ITEM_STYLE_SUBMENU,
+        "Style",
+        true,
+        &[&very_casual_style, &formal_style, &excited_style],
     )?;
     let pause_background_audio = CheckMenuItem::with_id(
         app,
@@ -490,6 +536,7 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
             &toggle,
             &separator_before_mode,
             &mode_menu,
+            &style_menu,
             &separator_before_settings,
             &settings_menu,
             &separator_before_permissions,
@@ -505,6 +552,15 @@ fn preferred_mode_for_menu_item(menu_id: &str) -> Option<&'static str> {
         MENU_ITEM_MODE_DEFAULT => Some("default"),
         MENU_ITEM_MODE_CHAT => Some("chat"),
         MENU_ITEM_MODE_LIST => Some("bullet_list"),
+        _ => None,
+    }
+}
+
+fn typing_style_for_menu_item(menu_id: &str) -> Option<&'static str> {
+    match menu_id {
+        MENU_ITEM_STYLE_VERY_CASUAL => Some("very_casual"),
+        MENU_ITEM_STYLE_FORMAL => Some("formal"),
+        MENU_ITEM_STYLE_EXCITED => Some("excited"),
         _ => None,
     }
 }
@@ -707,6 +763,10 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
             menu_id => {
                 if let Some(preferred_mode) = preferred_mode_for_menu_item(menu_id) {
                     let _ = update_preferred_mode_from_tray(app, preferred_mode);
+                } else if let Some(typing_style) = typing_style_for_menu_item(menu_id) {
+                    let _ = update_setting_from_tray(app, |settings| {
+                        settings.typing_style = typing_style.to_string();
+                    });
                 } else if let Some(interaction_mode) = interaction_mode_for_menu_item(menu_id) {
                     let _ = update_setting_from_tray(app, |settings| {
                         settings.interaction_mode = interaction_mode.to_string();

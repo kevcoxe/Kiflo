@@ -6,6 +6,14 @@ export const DICTATION_MODES = [
 
 export type DictationMode = (typeof DICTATION_MODES)[number];
 
+export const TYPING_STYLES = [
+  "very_casual",
+  "formal",
+  "excited",
+] as const;
+
+export type TypingStyle = (typeof TYPING_STYLES)[number];
+
 export const RECORDING_INTERACTION_MODES = ["hold", "toggle"] as const;
 
 export type RecordingInteractionMode =
@@ -34,6 +42,7 @@ export interface Settings {
   restoreClipboard: boolean;
   interactionMode: RecordingInteractionMode;
   preferredMode: DictationMode;
+  typingStyle: TypingStyle;
   customDictionary: string;
   saveHistory: boolean;
   hideDockIcon: boolean;

@@ -15,6 +15,7 @@ const defaultSettings = {
   restoreClipboard: true,
   interactionMode: "hold" as const,
   preferredMode: "default" as const,
+  typingStyle: "formal" as const,
   customDictionary: "",
   saveHistory: true,
   hideDockIcon: false,
@@ -332,6 +333,19 @@ describe("App", () => {
     await waitFor(() => {
       expect(desktop.updateSettings).toHaveBeenCalledWith(
         expect.objectContaining({ hideDockIcon: true }),
+      );
+    });
+  });
+
+  it("persists the typing style preference from settings", async () => {
+    render(<App />);
+
+    const select = await screen.findByLabelText(/Typing style/i);
+    fireEvent.change(select, { target: { value: "excited" } });
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ typingStyle: "excited" }),
       );
     });
   });
