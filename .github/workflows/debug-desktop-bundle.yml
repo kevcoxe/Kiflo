@@ -1,9 +1,6 @@
 name: Debug Desktop Bundle
 
 on:
-  push:
-    branches:
-      - "codex/debug-desktop-bundle"
   workflow_dispatch:
     inputs:
       git_ref:
