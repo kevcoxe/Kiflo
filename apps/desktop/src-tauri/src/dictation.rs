@@ -1335,6 +1335,15 @@ fn resolve_helper_runner(
         });
     }
 
+    if let Ok(executable) = env::var("TATOR_PYTHON_EXECUTABLE") {
+        return Ok(HelperRunner {
+            program: executable,
+            base_args: vec![helper_script.to_string_lossy().into_owned()],
+            env_vars: Vec::new(),
+            supports_persistent_process: true,
+        });
+    }
+
     let bundled_helper = app_data_dir
         .join("runtime")
         .join("bin")
@@ -1364,15 +1373,6 @@ fn resolve_helper_runner(
                 ("PYTHONDONTWRITEBYTECODE".to_string(), "1".to_string()),
                 ("PYTHONNOUSERSITE".to_string(), "1".to_string()),
             ],
-            supports_persistent_process: true,
-        });
-    }
-
-    if let Ok(executable) = env::var("TATOR_PYTHON_EXECUTABLE") {
-        return Ok(HelperRunner {
-            program: executable,
-            base_args: vec![helper_script.to_string_lossy().into_owned()],
-            env_vars: Vec::new(),
             supports_persistent_process: true,
         });
     }
@@ -1427,10 +1427,14 @@ fn helper_error_message(stderr: &[u8], stdout: &[u8]) -> String {
         return "The packaged MLX runtime is incomplete. Rebuild the desktop app so `Contents/Resources/runtime` includes the Hugging Face client dependencies required by `mlx_whisper`.".to_string();
     }
 
+    if combined.contains("code signature invalid") || combined.contains("invalid Info.plist") {
+        return "The packaged Python runtime in this build has an invalid code signature, so macOS refused to load it. Reinstall Tator from a build that re-signs the bundled runtime. For debugging only, you can temporarily set `TATOR_PYTHON_EXECUTABLE` to a local Python 3.12 environment with `mlx_whisper` installed.".to_string();
+    }
+
     if combined.contains("Library not loaded:")
         && (combined.contains("Python.framework") || combined.contains("libpython3.12.dylib"))
     {
-        return "The packaged Python runtime could not be relocated on this machine. Reinstall Tator from a build that includes the updated bundled runtime, or temporarily set `TATOR_PYTHON_EXECUTABLE` to a local Python 3.12 environment with `mlx_whisper` installed.".to_string();
+        return "The packaged Python runtime could not be relocated on this machine. Reinstall Tator from a build that includes the updated bundled runtime, or for debugging only temporarily set `TATOR_PYTHON_EXECUTABLE` to a local Python 3.12 environment with `mlx_whisper` installed.".to_string();
     }
 
     if combined.contains("signal: 9 (SIGKILL)") || combined.contains("killed: 9") {
@@ -1904,6 +1908,17 @@ mod tests {
     }
 
     #[test]
+    fn helper_error_message_maps_code_signature_invalid_to_bundle_signing_guidance() {
+        let message = helper_error_message(
+            b"dyld: Library not loaded: @executable_path/../lib/libpython3.12.dylib\nReason: tried: '/tmp/libpython3.12.dylib' (code signature invalid in '/tmp/libpython3.12.dylib')",
+            b"",
+        );
+        assert!(message.contains("invalid code signature"));
+        assert!(message.contains("re-signs the bundled runtime"));
+        assert!(message.contains("For debugging only"));
+    }
+
+    #[test]
     fn helper_error_message_maps_dyld_python_failures_to_reinstall_guidance() {
         let message = helper_error_message(
             b"dyld: Library not loaded: /Library/Frameworks/Python.framework/Versions/3.12/Python",
@@ -1931,5 +1946,35 @@ mod tests {
         assert!(!should_tolerate_prewarm_failure(
             "ModuleNotFoundError: No module named 'mlx_whisper'",
         ));
+    }
+
+    #[test]
+    fn resolve_helper_runner_prefers_tator_python_executable_over_bundled_runtime() {
+        let root = env::temp_dir().join(format!("tator-helper-runner-{}", Uuid::new_v4()));
+        let app_data_dir = root.join("app-data");
+        let resource_dir = root.join("resources");
+        let runtime_root = resource_dir.join("runtime");
+        let debug_python = root.join("debug-python");
+
+        std::fs::create_dir_all(runtime_root.join("python-home").join("bin")).unwrap();
+        std::fs::create_dir_all(runtime_root.join("site-packages").join("mlx_whisper")).unwrap();
+        std::fs::write(runtime_root.join("manifest.json"), "{}").unwrap();
+        std::fs::write(runtime_root.join("python-home").join("bin").join("python3.12"), "").unwrap();
+        std::fs::write(&debug_python, "").unwrap();
+
+        env::set_var("TATOR_PYTHON_EXECUTABLE", &debug_python);
+        let runner = resolve_helper_runner(
+            &app_data_dir,
+            Some(&resource_dir),
+            Path::new("/tmp/tator-helper.py"),
+        )
+        .unwrap();
+        env::remove_var("TATOR_PYTHON_EXECUTABLE");
+
+        let _ = std::fs::remove_dir_all(&root);
+
+        assert_eq!(runner.program, debug_python.to_string_lossy());
+        assert_eq!(runner.base_args, vec!["/tmp/tator-helper.py".to_string()]);
+        assert!(runner.supports_persistent_process);
     }
 }

@@ -294,6 +294,14 @@ function listMachODeps(filePath) {
   }
 }
 
+function isMachOFile(filePath) {
+  try {
+    return runTool("file", [filePath]).includes("Mach-O");
+  } catch {
+    return false;
+  }
+}
+
 function relocateBundledPython(outputDir, pythonVersion) {
   const outputPythonHome = path.join(outputDir, "python-home");
   normalizePythonLaunchers(outputPythonHome);
@@ -325,6 +333,57 @@ function relocateBundledPython(outputDir, pythonVersion) {
       }
     }
   }
+}
+
+function signingPriority(filePath, bundledLibpython, pythonExecutable) {
+  if (filePath === pythonExecutable) {
+    return 30;
+  }
+
+  if (filePath === bundledLibpython) {
+    return 20;
+  }
+
+  if (filePath.endsWith(".so") || filePath.endsWith(".dylib")) {
+    return 10;
+  }
+
+  return 15;
+}
+
+function signBundledRuntime(outputDir, pythonVersion) {
+  const outputPythonHome = path.join(outputDir, "python-home");
+  const majorMinor = pythonVersion.split(".").slice(0, 2).join(".");
+  const bundledLibpython = path.join(outputPythonHome, "lib", `libpython${majorMinor}.dylib`);
+  const pythonExecutable = path.join(outputPythonHome, "bin", `python${majorMinor}`);
+
+  const machOFiles = walkFiles(outputDir)
+    .filter(isMachOFile)
+    .sort((left, right) => {
+      const priorityDifference = signingPriority(left, bundledLibpython, pythonExecutable)
+        - signingPriority(right, bundledLibpython, pythonExecutable);
+      if (priorityDifference !== 0) {
+        return priorityDifference;
+      }
+
+      const depthDifference = right.split(path.sep).length - left.split(path.sep).length;
+      if (depthDifference !== 0) {
+        return depthDifference;
+      }
+
+      return left.localeCompare(right);
+    });
+
+  if (machOFiles.length === 0) {
+    fail(`Did not find any Mach-O files to sign under ${outputDir}.`);
+  }
+
+  for (const filePath of machOFiles) {
+    runTool("codesign", ["--force", "--sign", "-", "--timestamp=none", filePath]);
+    runTool("codesign", ["--verify", "--verbose=4", filePath]);
+  }
+
+  console.log(`Re-signed ${machOFiles.length} bundled Mach-O files.`);
 }
 
 function main() {
@@ -362,6 +421,8 @@ function main() {
       2,
     ),
   );
+
+  signBundledRuntime(outputDir, pythonVersion);
 
   console.log(`Prepared MLX runtime at ${outputDir}`);
 }

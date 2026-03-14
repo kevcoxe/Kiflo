@@ -230,6 +230,7 @@ if [[ -d "$site_packages" ]]; then
 fi
 
 if [[ -n "$python_executable" && -d "$python_home" && -d "$site_packages" ]]; then
+  run_python_probe "00-python-startup" "import sys; print(sys.version)"
   run_python_probe "01-import-core-deps" "import numpy, huggingface_hub"
   run_python_probe "02-import-mlx-core" "import mlx.core"
   run_python_probe "03-import-mlx-whisper" "import mlx_whisper"

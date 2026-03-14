@@ -110,10 +110,43 @@ jobs:
             echo "archive_name=$archive_name"
           } >"$artifact_root/metadata.txt"
 
+      - name: Validate bundled runtime diagnostics
+        env:
+          RUNNER_LABEL: ${{ matrix.runner }}
+        run: |
+          set -euo pipefail
+
+          diagnostics_dir="debug-artifacts/${RUNNER_LABEL}/diagnostics"
+          required_exit_files=(
+            "binaries/python_codesign_verify.exit.txt"
+            "binaries/libpython_codesign_verify.exit.txt"
+            "smoke-tests/00-python-startup.exit.txt"
+            "smoke-tests/01-import-core-deps.exit.txt"
+          )
+
+          for relative_path in "${required_exit_files[@]}"; do
+            exit_path="${diagnostics_dir}/${relative_path}"
+            if [[ ! -f "$exit_path" ]]; then
+              echo "Missing required diagnostics file: $exit_path" >&2
+              exit 1
+            fi
+
+            status="$(tr -d '\n' < "$exit_path")"
+            if [[ "$status" != "0" ]]; then
+              echo "Required bundled-runtime validation failed: ${relative_path} (exit ${status})" >&2
+              stderr_path="${exit_path%.exit.txt}.stderr.txt"
+              if [[ -f "$stderr_path" ]]; then
+                sed -n '1,120p' "$stderr_path" >&2
+              fi
+              exit 1
+            fi
+          done
+
       - name: Upload debug artifacts
+        if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
           name: desktop-debug-${{ matrix.runner }}-${{ steps.metadata.outputs.release_version }}
           path: debug-artifacts/${{ matrix.runner }}
-          if-no-files-found: error
+          if-no-files-found: warn
           retention-days: 14
