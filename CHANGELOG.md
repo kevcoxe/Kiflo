@@ -4,9 +4,13 @@ All notable changes to the shipped Tator desktop app are documented in this file
 
 The format is based on Keep a Changelog and adapted to this repository's tag-driven release workflow.
 
-## [0.2.0] - 2026-03-13
+## [0.3.0] - 2026-03-13
 
 ### Changed
+- Replace the bundled Python/MLX transcription helper with a native `whisper.cpp` backend
+- Bundle the `whisper.cpp` model directly with the desktop app
+- Add Windows GitHub Actions desktop bundles alongside macOS releases
+- Improve cross-platform permissions and paste behavior for desktop builds
 - Add warm speech model on app launch setting
 - Sync the menu bar settings toggles with the main settings panel
 

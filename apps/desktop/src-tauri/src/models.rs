@@ -23,7 +23,7 @@ pub struct Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            hotkey: "Option+Space".to_string(),
+            hotkey: default_hotkey().to_string(),
             auto_paste: true,
             auto_backtrack: false,
             spoken_press_enter_command: false,
@@ -40,6 +40,16 @@ impl Default for Settings {
             show_hud: true,
         }
     }
+}
+
+#[cfg(target_os = "windows")]
+fn default_hotkey() -> &'static str {
+    "Alt+Space"
+}
+
+#[cfg(not(target_os = "windows"))]
+fn default_hotkey() -> &'static str {
+    "Option+Space"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

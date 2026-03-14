@@ -10,7 +10,30 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform_name: macos
+            cmake_c_flags: -D_LIBCPP_DISABLE_AVAILABILITY
+            cmake_cxx_flags: -D_LIBCPP_DISABLE_AVAILABILITY
+            macos_deployment_target: "15.0"
+            ggml_native: "OFF"
+          - runner: windows-2025
+            platform_name: windows
+            cmake_c_flags: ""
+            cmake_cxx_flags: ""
+            macos_deployment_target: ""
+            ggml_native: ""
+
+    runs-on: ${{ matrix.runner }}
+    env:
+      CMAKE_C_FLAGS: ${{ matrix.cmake_c_flags }}
+      CMAKE_CXX_FLAGS: ${{ matrix.cmake_cxx_flags }}
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
+      CMAKE_OSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
+      GGML_NATIVE: ${{ matrix.ggml_native }}
 
     steps:
       - name: Check out repository
@@ -22,54 +45,16 @@ jobs:
           node-version: 23
           cache: npm
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install JavaScript dependencies
         run: npm ci
 
-      - name: Install bundled MLX helper runtime
-        run: uv sync --project apps/mlx-runtime --extra dev
-
       - name: Sync desktop version from tag
         env:
           RELEASE_VERSION: ${{ github.ref_name }}
-        run: |
-          VERSION="${RELEASE_VERSION#v}"
-          export VERSION
-          node <<'EOF'
-          const fs = require("node:fs");
-
-          const version = process.env.VERSION;
-          const jsonFiles = [
-            "apps/desktop/package.json",
-            "apps/desktop/src-tauri/tauri.conf.json",
-          ];
-
-          for (const file of jsonFiles) {
-            const content = JSON.parse(fs.readFileSync(file, "utf8"));
-            content.version = version;
-            fs.writeFileSync(file, `${JSON.stringify(content, null, 2)}\n`);
-          }
-
-          const cargoTomlPath = "apps/desktop/src-tauri/Cargo.toml";
-          const cargoToml = fs.readFileSync(cargoTomlPath, "utf8");
-          const versionPattern = /^version = ".*"$/m;
-
-          if (!versionPattern.test(cargoToml)) {
-            throw new Error("Could not find a version entry in apps/desktop/src-tauri/Cargo.toml");
-          }
-
-          const updatedCargoToml = cargoToml.replace(
-            versionPattern,
-            `version = "${version}"`,
-          );
-
-          fs.writeFileSync(cargoTomlPath, updatedCargoToml);
-          EOF
+        run: node ./scripts/sync-desktop-version.mjs "${RELEASE_VERSION}"
 
       - name: Load release notes from changelog
         id: release_notes

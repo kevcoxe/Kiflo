@@ -570,9 +570,7 @@ describe("App", () => {
 
     expect(await screen.findByRole("button", { name: "Hold to Record" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Show permissions details" })).toBeVisible();
-    expect(
-      screen.getByText("Microphone and accessibility access are granted."),
-    ).toBeVisible();
+    expect(screen.getByText("Required permissions are granted.")).toBeVisible();
     expect(screen.queryByText("Microphone")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Show permissions details" }));

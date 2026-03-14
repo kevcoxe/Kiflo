@@ -509,6 +509,7 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         true,
         None::<&str>,
     )?;
+    #[cfg(target_os = "macos")]
     let open_accessibility_settings = MenuItem::with_id(
         app,
         MENU_ITEM_OPEN_ACCESSIBILITY_SETTINGS,
@@ -516,12 +517,37 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         true,
         None::<&str>,
     )?;
+    #[cfg(target_os = "windows")]
+    let open_accessibility_settings = MenuItem::with_id(
+        app,
+        MENU_ITEM_OPEN_ACCESSIBILITY_SETTINGS,
+        "Open Accessibility Settings",
+        true,
+        None::<&str>,
+    )?;
+    #[cfg(target_os = "macos")]
     let permissions_menu = Submenu::with_id_and_items(
         app,
         MENU_ITEM_PERMISSIONS_SUBMENU,
         "Permissions",
         true,
         &[&open_microphone_settings, &open_accessibility_settings],
+    )?;
+    #[cfg(target_os = "windows")]
+    let permissions_menu = Submenu::with_id_and_items(
+        app,
+        MENU_ITEM_PERMISSIONS_SUBMENU,
+        "Permissions",
+        true,
+        &[&open_microphone_settings, &open_accessibility_settings],
+    )?;
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    let permissions_menu = Submenu::with_id_and_items(
+        app,
+        MENU_ITEM_PERMISSIONS_SUBMENU,
+        "Permissions",
+        true,
+        &[&open_microphone_settings],
     )?;
     let separator_before_mode = PredefinedMenuItem::separator(app)?;
     let separator_before_settings = PredefinedMenuItem::separator(app)?;
