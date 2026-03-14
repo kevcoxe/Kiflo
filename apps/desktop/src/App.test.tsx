@@ -1,41 +1,52 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { DictationMode } from "@tator/shared-types";
+import type {
+  DictationMode,
+  HistoryMetrics,
+  ModelStatus,
+  PermissionStatus,
+  Settings,
+} from "@tator/shared-types";
 import App from "./App";
 import * as desktop from "@/lib/desktop";
 import * as recordingCues from "@/lib/recording-cues";
 
-const defaultSettings = {
+const defaultSettings: Settings = {
   hotkey: "Option+Space",
   autoPaste: true,
   autoBacktrack: false,
   spokenPressEnterCommand: false,
   pauseBackgroundAudio: true,
   warmModelOnLaunch: true,
+  speechModel: "base_en",
   recordingCueVolume: 75,
   restoreClipboard: true,
-  interactionMode: "hold" as const,
-  preferredMode: "default" as const,
-  typingStyle: "formal" as const,
+  interactionMode: "hold",
+  preferredMode: "default",
+  typingStyle: "formal",
   customDictionary: "",
   saveHistory: true,
   hideDockIcon: false,
   showHud: true,
 };
 
-const defaultPermissions = {
-  microphone: "granted" as const,
-  accessibility: "granted" as const,
+const defaultPermissions: PermissionStatus = {
+  microphone: "granted",
+  accessibility: "granted",
 };
 
-const defaultModelStatus = {
+const defaultModelStatus: ModelStatus = {
   installed: true,
+  bundledModel: "base_en",
+  activeModel: "base_en",
+  installedModels: ["base_en"],
+  downloadTarget: null,
   downloading: false,
   progress: null,
   error: null,
 };
 
 
-const defaultMetrics = {
+const defaultMetrics: HistoryMetrics = {
   totalSessions: 0,
   totalWordsSpoken: 0,
   totalSpeakingTimeMs: 0,
@@ -348,6 +359,70 @@ describe("App", () => {
         expect.objectContaining({ typingStyle: "excited" }),
       );
     });
+  });
+
+  it("downloads the small speech model and switches to it", async () => {
+    const getModelStatusSpy = vi.spyOn(desktop, "getModelStatus");
+    getModelStatusSpy.mockReset();
+    getModelStatusSpy
+      .mockResolvedValueOnce(defaultModelStatus)
+      .mockResolvedValueOnce({
+        ...defaultModelStatus,
+        installedModels: ["base_en", "small_en"],
+      })
+      .mockResolvedValueOnce({
+        ...defaultModelStatus,
+        activeModel: "small_en",
+        installedModels: ["base_en", "small_en"],
+      });
+    const downloadModelSpy = vi.spyOn(desktop, "downloadModel").mockResolvedValue(undefined);
+
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Download small model (~488 MB)" }),
+    );
+
+    await waitFor(() => {
+      expect(downloadModelSpy).toHaveBeenCalledWith("small_en");
+    });
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ speechModel: "small_en" }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Speech model")).toHaveValue("small_en");
+    });
+  });
+
+  it("keeps base selected when the small speech model download fails", async () => {
+    const getModelStatusSpy = vi.spyOn(desktop, "getModelStatus");
+    getModelStatusSpy.mockReset();
+    getModelStatusSpy
+      .mockResolvedValueOnce(defaultModelStatus)
+      .mockResolvedValueOnce({
+        ...defaultModelStatus,
+        error: "network down",
+      });
+    vi.spyOn(desktop, "downloadModel").mockRejectedValue(new Error("network down"));
+
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Download small model (~488 MB)" }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("network down")).toBeVisible();
+    });
+
+    expect(screen.getByLabelText("Speech model")).toHaveValue("base_en");
+    expect(desktop.updateSettings).not.toHaveBeenCalledWith(
+      expect.objectContaining({ speechModel: "small_en" }),
+    );
   });
 
   it("persists the startup model warm-up preference from settings", async () => {

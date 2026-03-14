@@ -6,6 +6,7 @@ import type {
   ModelStatus,
   NewHistoryRecord,
   PermissionStatus,
+  SpeechModel,
   Settings,
 } from "@tator/shared-types";
 import {
@@ -67,6 +68,7 @@ const DEFAULT_SETTINGS: Settings = {
   spokenPressEnterCommand: false,
   pauseBackgroundAudio: true,
   warmModelOnLaunch: true,
+  speechModel: "base_en",
   recordingCueVolume: 75,
   restoreClipboard: true,
   interactionMode: "hold",
@@ -84,7 +86,11 @@ const DEFAULT_PERMISSIONS: PermissionStatus = {
 };
 
 const DEFAULT_MODEL_STATUS: ModelStatus = {
-  installed: false,
+  installed: true,
+  bundledModel: "base_en",
+  activeModel: "base_en",
+  installedModels: ["base_en"],
+  downloadTarget: null,
   downloading: false,
   progress: null,
   error: null,
@@ -671,6 +677,7 @@ export function useDictationController() {
   }
 
   async function saveSettings(nextSettings: Settings) {
+    const previousSpeechModel = stateRef.current.settings.speechModel;
     const saved = await updateSettings(nextSettings);
     stateRef.current = {
       ...stateRef.current,
@@ -679,6 +686,10 @@ export function useDictationController() {
     };
     setSettings(saved);
     setMode(saved.preferredMode);
+    if (saved.speechModel !== previousSpeechModel) {
+      await refreshModelState();
+    }
+    return saved;
   }
 
   async function retryPaste() {
@@ -708,20 +719,26 @@ export function useDictationController() {
     await setClipboardText(stateRef.current.fallbackText);
   }
 
-  async function installModel() {
+  async function installModel(model: SpeechModel) {
     try {
       setError(null);
       setModelStatus((current) => ({
         ...current,
         downloading: true,
+        downloadTarget: model,
         error: null,
       }));
-      await downloadModel();
+      await downloadModel(model);
+      await refreshModelState();
+      await saveSettings({
+        ...stateRef.current.settings,
+        speechModel: model,
+      });
     } catch (downloadError) {
       setError(
         describeError(
           downloadError,
-          "Unable to install the bundled local speech model.",
+          "Unable to download the optional local speech model.",
         ),
       );
     } finally {

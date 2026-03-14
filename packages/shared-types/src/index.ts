@@ -31,6 +31,13 @@ export type HistoryStatus = (typeof HISTORY_STATUSES)[number];
 
 export type PermissionState = "granted" | "denied" | "unknown";
 
+export const SPEECH_MODELS = [
+  "base_en",
+  "small_en",
+] as const;
+
+export type SpeechModel = (typeof SPEECH_MODELS)[number];
+
 export interface Settings {
   hotkey: string;
   autoPaste: boolean;
@@ -38,6 +45,7 @@ export interface Settings {
   spokenPressEnterCommand: boolean;
   pauseBackgroundAudio: boolean;
   warmModelOnLaunch: boolean;
+  speechModel: SpeechModel;
   recordingCueVolume: number;
   restoreClipboard: boolean;
   interactionMode: RecordingInteractionMode;
@@ -98,6 +106,10 @@ export interface CleanupResponse {
 
 export interface ModelStatus {
   installed: boolean;
+  bundledModel: SpeechModel;
+  activeModel: SpeechModel;
+  installedModels: SpeechModel[];
+  downloadTarget?: SpeechModel | null;
   downloading: boolean;
   progress?: number | null;
   error?: string | null;

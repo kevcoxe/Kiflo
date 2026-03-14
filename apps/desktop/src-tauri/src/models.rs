@@ -1,5 +1,34 @@
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[serde(rename_all = "snake_case")]
+pub enum SpeechModel {
+    BaseEn,
+    SmallEn,
+}
+
+impl Default for SpeechModel {
+    fn default() -> Self {
+        Self::BaseEn
+    }
+}
+
+impl SpeechModel {
+    pub fn as_db_value(self) -> &'static str {
+        match self {
+            Self::BaseEn => "base_en",
+            Self::SmallEn => "small_en",
+        }
+    }
+
+    pub fn from_db_value(value: &str) -> Self {
+        match value {
+            "small_en" => Self::SmallEn,
+            _ => Self::BaseEn,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -9,6 +38,7 @@ pub struct Settings {
     pub spoken_press_enter_command: bool,
     pub pause_background_audio: bool,
     pub warm_model_on_launch: bool,
+    pub speech_model: SpeechModel,
     pub recording_cue_volume: i64,
     pub restore_clipboard: bool,
     pub interaction_mode: String,
@@ -29,6 +59,7 @@ impl Default for Settings {
             spoken_press_enter_command: false,
             pause_background_audio: true,
             warm_model_on_launch: true,
+            speech_model: SpeechModel::BaseEn,
             recording_cue_volume: 75,
             restore_clipboard: true,
             interaction_mode: "hold".to_string(),
@@ -142,6 +173,10 @@ pub struct CleanupResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ModelStatus {
     pub installed: bool,
+    pub bundled_model: SpeechModel,
+    pub active_model: SpeechModel,
+    pub installed_models: Vec<SpeechModel>,
+    pub download_target: Option<SpeechModel>,
     pub downloading: bool,
     pub progress: Option<f64>,
     pub error: Option<String>,

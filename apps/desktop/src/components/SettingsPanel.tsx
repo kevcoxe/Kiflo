@@ -3,13 +3,18 @@ import { useEffect, useRef, useState } from "react";
 import {
   DICTATION_MODES,
   RECORDING_INTERACTION_MODES,
+  SPEECH_MODELS,
   TYPING_STYLES,
+  type ModelStatus,
+  type SpeechModel,
   type Settings,
 } from "@tator/shared-types";
 
 interface SettingsPanelProps {
   settings: Settings;
+  modelStatus: ModelStatus;
   onChange: (settings: Settings) => void;
+  onDownloadModel: (model: SpeechModel) => void;
 }
 
 interface DictionaryRow {
@@ -20,7 +25,12 @@ interface DictionaryRow {
 
 const DEFAULT_RECORDING_CUE_VOLUME = 75;
 
-export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
+export function SettingsPanel({
+  settings,
+  modelStatus,
+  onChange,
+  onDownloadModel,
+}: SettingsPanelProps) {
   const previousCueVolumeRef = useRef(
     settings.recordingCueVolume > 0
       ? settings.recordingCueVolume
@@ -87,6 +97,14 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
     updateDictionary(dictionaryRows.filter((row) => row.id !== rowId));
   }
 
+  const selectableSpeechModels = SPEECH_MODELS.filter(
+    (model) =>
+      modelStatus.installedModels.includes(model) || settings.speechModel === model,
+  );
+  const smallModelInstalled = modelStatus.installedModels.includes("small_en");
+  const downloadingSmallModel =
+    modelStatus.downloading && modelStatus.downloadTarget === "small_en";
+
   return (
     <section className="panel">
       <div className="panel-header">
@@ -150,6 +168,47 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
           ))}
         </select>
       </label>
+      <div className="field">
+        <span>Speech model</span>
+        <p className="field-help muted">
+          Base English is bundled with the app. Small English is more accurate, but
+          it adds a larger local download and uses more disk space.
+        </p>
+        <select
+          aria-label="Speech model"
+          disabled={modelStatus.downloading}
+          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+            update("speechModel", event.target.value as Settings["speechModel"])
+          }
+          value={settings.speechModel}
+        >
+          {selectableSpeechModels.map((model) => (
+            <option key={model} value={model}>
+              {labelForSpeechModel(model, modelStatus.bundledModel)}
+            </option>
+          ))}
+        </select>
+        {!smallModelInstalled ? (
+          <>
+            <p className="field-help muted">
+              Download Small English for higher accuracy. It adds about 488 MB to app
+              data.
+            </p>
+            <div className="dictionary-actions">
+              <button
+                className="secondary-button"
+                disabled={modelStatus.downloading}
+                onClick={() => onDownloadModel("small_en")}
+                type="button"
+              >
+                {downloadingSmallModel
+                  ? "Downloading small model..."
+                  : "Download small model (~488 MB)"}
+              </button>
+            </div>
+          </>
+        ) : null}
+      </div>
       <div className="field">
         <span id="custom-dictionary-label">Custom dictionary</span>
         <p className="field-help muted">
@@ -326,6 +385,11 @@ export function SettingsPanel({ settings, onChange }: SettingsPanelProps) {
       </label>
     </section>
   );
+}
+
+function labelForSpeechModel(model: SpeechModel, bundledModel: SpeechModel): string {
+  const baseLabel = model === "base_en" ? "Base English" : "Small English";
+  return model === bundledModel ? `${baseLabel} (bundled)` : baseLabel;
 }
 
 function createDictionaryRow(nextDictionaryRowId: MutableRefObject<number>): DictionaryRow {

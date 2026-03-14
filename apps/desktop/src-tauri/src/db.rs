@@ -4,7 +4,9 @@ use chrono::Utc;
 use rusqlite::{params, Connection};
 use uuid::Uuid;
 
-use crate::models::{HistoryMetrics, HistoryRecord, HistoryWordMetric, NewHistoryRecord, Settings};
+use crate::models::{
+    HistoryMetrics, HistoryRecord, HistoryWordMetric, NewHistoryRecord, Settings, SpeechModel,
+};
 
 const SCHEMA: &str = r#"
 CREATE TABLE IF NOT EXISTS settings (
@@ -15,6 +17,7 @@ CREATE TABLE IF NOT EXISTS settings (
   spoken_press_enter_command INTEGER NOT NULL DEFAULT 0,
   pause_background_audio INTEGER NOT NULL DEFAULT 1,
   warm_model_on_launch INTEGER NOT NULL DEFAULT 1,
+  speech_model TEXT NOT NULL DEFAULT 'base_en',
   recording_cue_volume INTEGER NOT NULL DEFAULT 75,
   restore_clipboard INTEGER NOT NULL,
   interaction_mode TEXT NOT NULL DEFAULT 'hold',
@@ -61,7 +64,7 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
     let connection = open(path)?;
     let mut settings = connection
         .query_row(
-            "SELECT hotkey, auto_paste, auto_backtrack, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, typing_style, custom_dictionary, save_history, hide_dock_icon, show_hud
+            "SELECT hotkey, auto_paste, auto_backtrack, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, speech_model, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, typing_style, custom_dictionary, save_history, hide_dock_icon, show_hud
              FROM settings WHERE id = 1",
             [],
             |row| {
@@ -72,15 +75,16 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
                     spoken_press_enter_command: row.get::<_, i64>(3)? != 0,
                     pause_background_audio: row.get::<_, i64>(4)? != 0,
                     warm_model_on_launch: row.get::<_, i64>(5)? != 0,
-                    recording_cue_volume: row.get(6)?,
-                    restore_clipboard: row.get::<_, i64>(7)? != 0,
-                    interaction_mode: row.get(8)?,
-                    preferred_mode: row.get(9)?,
-                    typing_style: row.get(10)?,
-                    custom_dictionary: row.get(11)?,
-                    save_history: row.get::<_, i64>(12)? != 0,
-                    hide_dock_icon: row.get::<_, i64>(13)? != 0,
-                    show_hud: row.get::<_, i64>(14)? != 0,
+                    speech_model: SpeechModel::from_db_value(&row.get::<_, String>(6)?),
+                    recording_cue_volume: row.get(7)?,
+                    restore_clipboard: row.get::<_, i64>(8)? != 0,
+                    interaction_mode: row.get(9)?,
+                    preferred_mode: row.get(10)?,
+                    typing_style: row.get(11)?,
+                    custom_dictionary: row.get(12)?,
+                    save_history: row.get::<_, i64>(13)? != 0,
+                    hide_dock_icon: row.get::<_, i64>(14)? != 0,
+                    show_hud: row.get::<_, i64>(15)? != 0,
                 })
             },
         )
@@ -358,6 +362,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 spoken_press_enter_command,
                 pause_background_audio,
                 warm_model_on_launch,
+                speech_model,
                 recording_cue_volume,
                 restore_clipboard,
                 interaction_mode,
@@ -368,7 +373,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 hide_dock_icon,
                 show_hud
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
              ON CONFLICT(id) DO UPDATE SET
                 hotkey = excluded.hotkey,
                 auto_paste = excluded.auto_paste,
@@ -376,6 +381,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 spoken_press_enter_command = excluded.spoken_press_enter_command,
                 pause_background_audio = excluded.pause_background_audio,
                 warm_model_on_launch = excluded.warm_model_on_launch,
+                speech_model = excluded.speech_model,
                 recording_cue_volume = excluded.recording_cue_volume,
                 restore_clipboard = excluded.restore_clipboard,
                 interaction_mode = excluded.interaction_mode,
@@ -392,6 +398,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 bool_to_integer(settings.spoken_press_enter_command),
                 bool_to_integer(settings.pause_background_audio),
                 bool_to_integer(settings.warm_model_on_launch),
+                settings.speech_model.as_db_value(),
                 settings.recording_cue_volume,
                 bool_to_integer(settings.restore_clipboard),
                 settings.interaction_mode,
@@ -446,6 +453,12 @@ fn ensure_settings_columns(connection: &Connection) -> Result<(), String> {
     add_column_if_missing(
         connection,
         "settings",
+        "speech_model",
+        "TEXT NOT NULL DEFAULT 'base_en'",
+    )?;
+    add_column_if_missing(
+        connection,
+        "settings",
         "recording_cue_volume",
         "INTEGER NOT NULL DEFAULT 75",
     )?;
@@ -492,6 +505,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               spoken_press_enter_command INTEGER NOT NULL DEFAULT 0,
               pause_background_audio INTEGER NOT NULL DEFAULT 1,
               warm_model_on_launch INTEGER NOT NULL DEFAULT 1,
+              speech_model TEXT NOT NULL DEFAULT 'base_en',
               recording_cue_volume INTEGER NOT NULL DEFAULT 75,
               restore_clipboard INTEGER NOT NULL,
               interaction_mode TEXT NOT NULL DEFAULT 'hold',
@@ -510,6 +524,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               spoken_press_enter_command,
               pause_background_audio,
               warm_model_on_launch,
+              speech_model,
               recording_cue_volume,
               restore_clipboard,
               interaction_mode,
@@ -528,6 +543,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               0,
               COALESCE(pause_background_audio, 1),
               1,
+              'base_en',
               COALESCE(recording_cue_volume, 75),
               restore_clipboard,
               COALESCE(interaction_mode, 'hold'),
@@ -666,12 +682,14 @@ mod tests {
 
         let mut settings = get_settings(&path).unwrap();
         assert!(settings.warm_model_on_launch);
+        assert_eq!(settings.speech_model, SpeechModel::BaseEn);
         settings.hotkey = "Option+Shift+Space".to_string();
         settings.interaction_mode = "toggle".to_string();
         settings.auto_backtrack = true;
         settings.spoken_press_enter_command = true;
         settings.pause_background_audio = false;
         settings.warm_model_on_launch = false;
+        settings.speech_model = SpeechModel::SmallEn;
         settings.recording_cue_volume = 0;
         settings.typing_style = "excited".to_string();
         settings.custom_dictionary = "Rebecca => Rebekah  \nKatherine => Kathryn\t".to_string();
@@ -688,6 +706,7 @@ mod tests {
         assert!(loaded.spoken_press_enter_command);
         assert!(!loaded.pause_background_audio);
         assert!(!loaded.warm_model_on_launch);
+        assert_eq!(loaded.speech_model, SpeechModel::SmallEn);
         assert_eq!(loaded.recording_cue_volume, 0);
         assert_eq!(loaded.typing_style, "excited");
         assert_eq!(
@@ -783,6 +802,7 @@ mod tests {
         assert_eq!(migrated.hotkey, "Option+Space");
         assert!(!migrated.spoken_press_enter_command);
         assert!(migrated.warm_model_on_launch);
+        assert_eq!(migrated.speech_model, SpeechModel::BaseEn);
         assert_eq!(migrated.typing_style, "formal");
         assert!(migrated.custom_dictionary.is_empty());
         assert!(!migrated.auto_backtrack);
@@ -946,7 +966,9 @@ mod tests {
 
         let settings = get_settings(&path).unwrap();
         assert!(!settings.auto_backtrack);
+        assert_eq!(settings.speech_model, SpeechModel::BaseEn);
         assert!(column_exists(&open(&path).unwrap(), "settings", "auto_backtrack").unwrap());
+        assert!(column_exists(&open(&path).unwrap(), "settings", "speech_model").unwrap());
         assert_eq!(settings.typing_style, "formal");
         assert!(column_exists(&open(&path).unwrap(), "settings", "typing_style").unwrap());
 

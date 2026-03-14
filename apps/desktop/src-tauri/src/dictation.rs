@@ -1,18 +1,23 @@
 use std::{
-    env, fs,
-    io::Cursor,
+    env,
+    fs::{self, File},
+    io::{Cursor, Read, Write},
     path::{Path, PathBuf},
     sync::Mutex,
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use hound::{SampleFormat, WavReader};
+use reqwest::blocking::Client;
+use sha1::{Digest, Sha1};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
-use crate::models::{CleanupResponse, DictationMode, ModelStatus, TranscriptionResponse};
+use crate::{
+    models::{CleanupResponse, DictationMode, ModelStatus, SpeechModel, TranscriptionResponse},
+    whisper_models::{all_models, bundled_model, find_model, is_known_model_file, WhisperModelSpec},
+};
 
 const MODEL_LANGUAGE: &str = "en";
-const MODEL_FILE_NAME: &str = "ggml-tiny.en.bin";
 const MODEL_ASSET_DIR: &str = "whisper";
 const MODEL_INSTALL_DIR: &str = "whisper.cpp";
 const MOCK_PROVIDER: &str = "mock";
@@ -116,6 +121,7 @@ const VALUE_LIKE_CONNECTORS: &[&str] = &["and", "or"];
 #[derive(Debug, Default)]
 pub struct ModelRuntimeState {
     pub downloading: bool,
+    pub download_target: Option<SpeechModel>,
     pub last_error: Option<String>,
 }
 
@@ -146,6 +152,7 @@ pub fn transcribe_audio(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
     runtime: &Mutex<ModelRuntimeState>,
+    speech_model: SpeechModel,
     audio_base64: &str,
     mode: DictationMode,
     app_name: Option<String>,
@@ -157,9 +164,14 @@ pub fn transcribe_audio(
 
     match selected_provider() {
         AsrProviderKind::Mock => Ok(mock_transcription(mode, app_name, duration_ms)),
-        AsrProviderKind::WhisperCpp => {
-            transcribe_with_whisper_cpp(app_data_dir, resource_dir, runtime, &audio, duration_ms)
-        }
+        AsrProviderKind::WhisperCpp => transcribe_with_whisper_cpp(
+            app_data_dir,
+            resource_dir,
+            runtime,
+            speech_model,
+            &audio,
+            duration_ms,
+        ),
     }
 }
 
@@ -195,26 +207,24 @@ pub fn get_model_status(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
     runtime: &Mutex<ModelRuntimeState>,
+    active_model: SpeechModel,
 ) -> Result<ModelStatus, String> {
     let state = runtime
         .lock()
         .map_err(|_| "Model status lock poisoned.".to_string())?;
-    if selected_provider() == AsrProviderKind::Mock {
-        return Ok(ModelStatus {
-            installed: true,
-            downloading: state.downloading,
-            progress: None,
-            error: state.last_error.clone(),
-        });
-    }
+    let installed_models = available_models(app_data_dir, resource_dir);
 
     let error = state
         .last_error
         .clone()
-        .or_else(|| bundled_model_availability_error(app_data_dir, resource_dir));
+        .or_else(|| model_availability_error(app_data_dir, resource_dir, active_model));
 
     Ok(ModelStatus {
-        installed: model_is_available(app_data_dir, resource_dir),
+        installed: installed_models.contains(&active_model),
+        bundled_model: bundled_model().id,
+        active_model,
+        installed_models,
+        download_target: state.download_target,
         downloading: state.downloading,
         progress: None,
         error,
@@ -225,29 +235,24 @@ pub fn download_model(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
     runtime: &Mutex<ModelRuntimeState>,
+    model: SpeechModel,
 ) -> Result<(), String> {
-    if selected_provider() == AsrProviderKind::Mock {
-        return Ok(());
-    }
-
-    if let Some(error) = bundled_model_availability_error(app_data_dir, resource_dir) {
-        return Err(error);
-    }
-
     {
         let mut state = runtime
             .lock()
             .map_err(|_| "Model status lock poisoned.".to_string())?;
         state.downloading = true;
+        state.download_target = Some(model);
         state.last_error = None;
     }
 
-    let result = ensure_model_installed(app_data_dir, resource_dir).map(|_| ());
+    let result = ensure_model_downloaded(app_data_dir, resource_dir, model).map(|_| ());
 
     let mut state = runtime
         .lock()
         .map_err(|_| "Model status lock poisoned.".to_string())?;
     state.downloading = false;
+    state.download_target = None;
     state.last_error = result.as_ref().err().cloned();
 
     result
@@ -257,12 +262,13 @@ pub fn prewarm_model(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
     runtime: &Mutex<ModelRuntimeState>,
+    speech_model: SpeechModel,
 ) -> Result<(), String> {
     if selected_provider() != AsrProviderKind::WhisperCpp {
         return Ok(());
     }
 
-    if let Some(error) = bundled_model_availability_error(app_data_dir, resource_dir) {
+    if let Some(error) = model_availability_error(app_data_dir, resource_dir, speech_model) {
         let mut state = runtime
             .lock()
             .map_err(|_| "Model status lock poisoned.".to_string())?;
@@ -270,7 +276,7 @@ pub fn prewarm_model(
         return Err(error);
     }
 
-    let result = ensure_model_installed(app_data_dir, resource_dir)
+    let result = ensure_model_available(app_data_dir, resource_dir, speech_model)
         .and_then(|model_path| load_whisper_context(&model_path).map(|_| ()));
 
     let mut state = runtime
@@ -292,10 +298,11 @@ fn transcribe_with_whisper_cpp(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
     runtime: &Mutex<ModelRuntimeState>,
+    speech_model: SpeechModel,
     audio: &[u8],
     duration_ms: i64,
 ) -> Result<TranscriptionResponse, String> {
-    let model_path = ensure_model_installed(app_data_dir, resource_dir)?;
+    let model_path = ensure_model_available(app_data_dir, resource_dir, speech_model)?;
     let samples = decode_audio_for_whisper(audio)?;
     let raw_text = transcribe_with_model(&model_path, &samples, MODEL_LANGUAGE)?;
 
@@ -405,7 +412,7 @@ fn transcribe_with_model(
     let context = load_whisper_context(model_path)?;
     let mut state = context
         .create_state()
-        .map_err(|error| format!("Unable to create the bundled whisper.cpp state: {error}"))?;
+        .map_err(|error| format!("Unable to create the selected whisper.cpp state: {error}"))?;
     let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
     params.set_language(Some(language));
     params.set_translate(false);
@@ -415,14 +422,14 @@ fn transcribe_with_model(
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
 
-    state.full(params, samples).map_err(|error| {
-        format!("The bundled whisper.cpp model failed to transcribe audio: {error}")
-    })?;
+    state
+        .full(params, samples)
+        .map_err(|error| format!("The selected whisper.cpp model failed to transcribe audio: {error}"))?;
 
     let mut transcript = String::new();
     for segment in state.as_iter() {
         let text = segment.to_str_lossy().map_err(|error| {
-            format!("The bundled whisper.cpp segment text was invalid UTF-8: {error}")
+            format!("The selected whisper.cpp segment text was invalid UTF-8: {error}")
         })?;
         transcript.push_str(text.as_ref());
     }
@@ -433,7 +440,7 @@ fn transcribe_with_model(
 fn load_whisper_context(model_path: &Path) -> Result<WhisperContext, String> {
     let model_path = model_path.to_string_lossy().into_owned();
     WhisperContext::new_with_params(&model_path, WhisperContextParameters::default()).map_err(
-        |error| format!("Unable to load the bundled whisper.cpp model `{model_path}`: {error}"),
+        |error| format!("Unable to load the selected whisper.cpp model `{model_path}`: {error}"),
     )
 }
 
@@ -1015,39 +1022,86 @@ fn model_directory(app_data_dir: &Path) -> PathBuf {
     app_data_dir.join("models").join(MODEL_INSTALL_DIR)
 }
 
-fn model_is_installed(app_data_dir: &Path) -> bool {
-    model_path(app_data_dir)
+fn model_is_installed(app_data_dir: &Path, model: SpeechModel) -> bool {
+    model_path(app_data_dir, model)
         .metadata()
         .map(|metadata| metadata.is_file() && metadata.len() > 0)
         .unwrap_or(false)
 }
 
-fn model_is_available(app_data_dir: &Path, resource_dir: Option<&Path>) -> bool {
-    model_is_installed(app_data_dir) || bundled_model_source_path(resource_dir).is_some()
-}
-
-fn model_path(app_data_dir: &Path) -> PathBuf {
-    model_directory(app_data_dir).join(MODEL_FILE_NAME)
-}
-
-fn ensure_model_installed(
+fn model_is_available(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
+    model: SpeechModel,
+) -> bool {
+    model_is_installed(app_data_dir, model) || bundled_model_source_path(resource_dir, model).is_some()
+}
+
+fn available_models(app_data_dir: &Path, resource_dir: Option<&Path>) -> Vec<SpeechModel> {
+    all_models()
+        .iter()
+        .filter_map(|spec| {
+            model_is_available(app_data_dir, resource_dir, spec.id).then_some(spec.id)
+        })
+        .collect()
+}
+
+fn model_path(app_data_dir: &Path, model: SpeechModel) -> PathBuf {
+    model_directory(app_data_dir).join(&find_model(model).file_name)
+}
+
+fn ensure_model_available(
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+    model: SpeechModel,
 ) -> Result<PathBuf, String> {
-    let installed_model = model_path(app_data_dir);
-    if model_is_installed(app_data_dir) {
+    remove_unknown_installed_models(app_data_dir)?;
+
+    let installed_model = model_path(app_data_dir, model);
+    if model_is_installed(app_data_dir, model) {
         return Ok(installed_model);
     }
 
-    let source_model = bundled_model_source_path(resource_dir).ok_or_else(|| {
-        "This build does not include the bundled whisper.cpp model. Rebuild with `npm run prepare:whisper-assets` before running the desktop app."
-            .to_string()
-    })?;
+    let spec = find_model(model);
+    if !spec.bundled {
+        return Err(optional_model_install_error(model));
+    }
 
+    let source_model = bundled_model_source_path(resource_dir, model)
+        .ok_or_else(missing_bundled_model_error)?;
+
+    install_bundled_model(app_data_dir, &source_model, spec)
+}
+
+fn ensure_model_downloaded(
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+    model: SpeechModel,
+) -> Result<PathBuf, String> {
+    remove_unknown_installed_models(app_data_dir)?;
+
+    if model_is_installed(app_data_dir, model) {
+        return Ok(model_path(app_data_dir, model));
+    }
+
+    let spec = find_model(model);
+    if spec.bundled {
+        return ensure_model_available(app_data_dir, resource_dir, model);
+    }
+
+    download_model_to_install(app_data_dir, spec)
+}
+
+fn install_bundled_model(
+    app_data_dir: &Path,
+    source_model: &Path,
+    spec: &WhisperModelSpec,
+) -> Result<PathBuf, String> {
     let model_dir = model_directory(app_data_dir);
+    let installed_model = model_dir.join(&spec.file_name);
     fs::create_dir_all(&model_dir)
         .map_err(|error| format!("Unable to create the model directory: {error}"))?;
-    fs::copy(&source_model, &installed_model).map_err(|error| {
+    fs::copy(source_model, &installed_model).map_err(|error| {
         format!(
             "Unable to copy the bundled whisper.cpp model from `{}` to `{}`: {error}",
             source_model.display(),
@@ -1058,35 +1112,203 @@ fn ensure_model_installed(
     Ok(installed_model)
 }
 
-fn bundled_model_source_path(resource_dir: Option<&Path>) -> Option<PathBuf> {
-    resource_dir
-        .map(resource_model_path)
-        .filter(|path| path.is_file())
-        .or_else(resolve_dev_bundled_model)
+fn download_model_to_install(
+    app_data_dir: &Path,
+    spec: &WhisperModelSpec,
+) -> Result<PathBuf, String> {
+    let client = Client::builder()
+        .build()
+        .map_err(|error| format!("Unable to prepare the whisper.cpp downloader: {error}"))?;
+    let response = client
+        .get(&spec.url)
+        .send()
+        .map_err(|error| {
+            format!(
+                "Unable to download the optional whisper.cpp model `{}`: {error}",
+                spec.file_name
+            )
+        })?
+        .error_for_status()
+        .map_err(|error| {
+            format!(
+                "Unable to download the optional whisper.cpp model `{}`: {error}",
+                spec.file_name
+            )
+        })?;
+
+    install_model_from_reader(app_data_dir, spec, response)
 }
 
-fn bundled_model_availability_error(
+fn install_model_from_reader<R: Read>(
+    app_data_dir: &Path,
+    spec: &WhisperModelSpec,
+    mut reader: R,
+) -> Result<PathBuf, String> {
+    let model_dir = model_directory(app_data_dir);
+    let installed_model = model_dir.join(&spec.file_name);
+    let temp_path = model_dir.join(format!("{}.download", spec.file_name));
+
+    fs::create_dir_all(&model_dir)
+        .map_err(|error| format!("Unable to create the model directory: {error}"))?;
+    let _ = fs::remove_file(&temp_path);
+
+    let write_result = (|| -> Result<(), String> {
+        let mut output = File::create(&temp_path)
+            .map_err(|error| format!("Unable to prepare the model download file: {error}"))?;
+        let mut hasher = Sha1::new();
+        let mut buffer = [0_u8; 16 * 1024];
+
+        loop {
+            let bytes_read = reader.read(&mut buffer).map_err(|error| {
+                format!(
+                    "Unable to download the optional whisper.cpp model `{}`: {error}",
+                    spec.file_name
+                )
+            })?;
+            if bytes_read == 0 {
+                break;
+            }
+
+            hasher.update(&buffer[..bytes_read]);
+            output.write_all(&buffer[..bytes_read]).map_err(|error| {
+                format!(
+                    "Unable to write the optional whisper.cpp model `{}`: {error}",
+                    spec.file_name
+                )
+            })?;
+        }
+
+        output
+            .flush()
+            .map_err(|error| format!("Unable to finalize the model download file: {error}"))?;
+
+        let digest = format!("{:x}", hasher.finalize());
+        if digest != spec.sha1 {
+            return Err(format!(
+                "Downloaded whisper.cpp model `{}` but the SHA1 did not match. Expected {}, received {}.",
+                spec.file_name, spec.sha1, digest
+            ));
+        }
+
+        if installed_model.exists() {
+            fs::remove_file(&installed_model).map_err(|error| {
+                format!(
+                    "Unable to replace the existing whisper.cpp model `{}`: {error}",
+                    installed_model.display()
+                )
+            })?;
+        }
+
+        fs::rename(&temp_path, &installed_model).map_err(|error| {
+            format!(
+                "Unable to install the whisper.cpp model `{}`: {error}",
+                installed_model.display()
+            )
+        })?;
+
+        Ok(())
+    })();
+
+    if let Err(error) = write_result {
+        let _ = fs::remove_file(&temp_path);
+        return Err(error);
+    }
+
+    Ok(installed_model)
+}
+
+fn remove_unknown_installed_models(app_data_dir: &Path) -> Result<(), String> {
+    let model_dir = model_directory(app_data_dir);
+    if !model_dir.exists() {
+        return Ok(());
+    }
+
+    let entries =
+        fs::read_dir(&model_dir).map_err(|error| format!("Unable to inspect the model directory: {error}"))?;
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("Unable to inspect the model directory: {error}"))?;
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+
+        let Some(file_name) = path.file_name().and_then(|value| value.to_str()) else {
+            continue;
+        };
+        if !file_name.starts_with("ggml-")
+            || !file_name.ends_with(".bin")
+            || is_known_model_file(file_name)
+        {
+            continue;
+        }
+
+        fs::remove_file(&path).map_err(|error| {
+            format!(
+                "Unable to remove the stale whisper.cpp model `{}`: {error}",
+                path.display()
+            )
+        })?;
+    }
+
+    Ok(())
+}
+
+fn bundled_model_source_path(resource_dir: Option<&Path>, model: SpeechModel) -> Option<PathBuf> {
+    if !find_model(model).bundled {
+        return None;
+    }
+
+    resource_dir
+        .map(|resource_dir| resource_model_path(resource_dir, model))
+        .filter(|path| path.is_file())
+        .or_else(|| resolve_dev_bundled_model(model))
+}
+
+fn model_availability_error(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
+    model: SpeechModel,
 ) -> Option<String> {
-    if model_is_available(app_data_dir, resource_dir) {
+    if model_is_available(app_data_dir, resource_dir, model) {
         None
+    } else if find_model(model).bundled {
+        Some(missing_bundled_model_error())
     } else {
-        Some(
-            "This build does not include the bundled whisper.cpp model. Run `npm run prepare:whisper-assets` before `tauri dev` or `tauri build` so the model is packaged into the desktop app.".to_string(),
-        )
+        Some(optional_model_install_error(model))
     }
 }
 
-fn resource_model_path(resource_dir: &Path) -> PathBuf {
-    resource_dir.join(MODEL_ASSET_DIR).join(MODEL_FILE_NAME)
+fn missing_bundled_model_error() -> String {
+    format!(
+        "This build does not include the bundled whisper.cpp model `{}`. Run `npm run prepare:whisper-assets` before `tauri dev` or `tauri build` so the model is packaged into the desktop app.",
+        bundled_model().file_name
+    )
 }
 
-fn resolve_dev_bundled_model() -> Option<PathBuf> {
+fn optional_model_install_error(model: SpeechModel) -> String {
+    let spec = find_model(model);
+    let size_mb = (spec.size_bytes as f64 / 1_000_000.0).round() as u64;
+    format!(
+        "The optional whisper.cpp model `{}` is not installed yet. Download the roughly {size_mb} MB model from Settings before selecting it.",
+        spec.file_name
+    )
+}
+
+fn resource_model_path(resource_dir: &Path, model: SpeechModel) -> PathBuf {
+    resource_dir
+        .join(MODEL_ASSET_DIR)
+        .join(&find_model(model).file_name)
+}
+
+fn resolve_dev_bundled_model(model: SpeechModel) -> Option<PathBuf> {
+    if !find_model(model).bundled {
+        return None;
+    }
+
     [PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("target")
         .join("bundled-whisper-model")
-        .join(MODEL_FILE_NAME)]
+        .join(&find_model(model).file_name)]
     .into_iter()
     .find(|candidate| candidate.exists())
 }
@@ -1094,6 +1316,9 @@ fn resolve_dev_bundled_model() -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{self, Read};
+
+    use uuid::Uuid;
 
     #[test]
     fn cleanup_formats_sentences() {
@@ -1329,13 +1554,61 @@ mod tests {
     }
 
     #[test]
-    fn mock_status_reports_ready() {
+    fn model_status_reports_bundled_base_by_default() {
         let runtime = Mutex::new(ModelRuntimeState::default());
-        env::set_var("TATOR_INTERNAL_ASR_PROVIDER", "mock");
-        let status = get_model_status(Path::new("/tmp"), None, &runtime).unwrap();
-        env::remove_var("TATOR_INTERNAL_ASR_PROVIDER");
+        let root = temp_root("status-base");
+        let app_data_dir = root.join("app-data");
+        let resource_dir = root.join("resources");
+        write_bundled_model_resource(&resource_dir, SpeechModel::BaseEn, b"base model");
+
+        let status = get_model_status(
+            &app_data_dir,
+            Some(&resource_dir),
+            &runtime,
+            SpeechModel::BaseEn,
+        )
+        .unwrap();
+
         assert!(status.installed);
+        assert_eq!(status.bundled_model, SpeechModel::BaseEn);
+        assert_eq!(status.active_model, SpeechModel::BaseEn);
+        assert_eq!(status.installed_models, vec![SpeechModel::BaseEn]);
+        assert!(status.download_target.is_none());
         assert!(!status.downloading);
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn model_status_lists_optional_small_when_present() {
+        let runtime = Mutex::new(ModelRuntimeState::default());
+        let root = temp_root("status-small");
+        let app_data_dir = root.join("app-data");
+        let resource_dir = root.join("resources");
+        let installed_dir = model_directory(&app_data_dir);
+
+        write_bundled_model_resource(&resource_dir, SpeechModel::BaseEn, b"base model");
+        std::fs::create_dir_all(&installed_dir).unwrap();
+        std::fs::write(
+            installed_dir.join(&find_model(SpeechModel::SmallEn).file_name),
+            b"small model",
+        )
+        .unwrap();
+
+        let status = get_model_status(
+            &app_data_dir,
+            Some(&resource_dir),
+            &runtime,
+            SpeechModel::BaseEn,
+        )
+        .unwrap();
+
+        assert_eq!(
+            status.installed_models,
+            vec![SpeechModel::BaseEn, SpeechModel::SmallEn]
+        );
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -1352,9 +1625,9 @@ mod tests {
     #[test]
     fn bundled_model_availability_error_reports_missing_model_assets() {
         let app_data_dir = Path::new("/tmp/tator-missing-model-app-data");
-        let message = bundled_model_availability_error(app_data_dir, None);
+        let message = model_availability_error(app_data_dir, None, SpeechModel::BaseEn);
 
-        if resolve_dev_bundled_model().is_some() {
+        if resolve_dev_bundled_model(SpeechModel::BaseEn).is_some() {
             assert!(message.is_none());
         } else {
             let message = message.unwrap();
@@ -1364,20 +1637,97 @@ mod tests {
     }
 
     #[test]
+    fn optional_small_model_reports_download_prompt_when_missing() {
+        let message =
+            model_availability_error(Path::new("/tmp/tator-missing-small-model"), None, SpeechModel::SmallEn)
+                .unwrap();
+        assert!(message.contains("Download the roughly 488 MB model from Settings"));
+    }
+
+    #[test]
     fn bundled_model_source_path_prefers_packaged_resources() {
-        use uuid::Uuid;
-
-        let root = env::temp_dir().join(format!("tator-whisper-model-{}", Uuid::new_v4()));
+        let root = temp_root("bundled-source");
         let resource_dir = root.join("resources");
-        let bundled_dir = resource_dir.join(MODEL_ASSET_DIR);
-        std::fs::create_dir_all(&bundled_dir).unwrap();
-        std::fs::write(bundled_dir.join(MODEL_FILE_NAME), b"tiny model").unwrap();
+        write_bundled_model_resource(&resource_dir, SpeechModel::BaseEn, b"base model");
 
-        let source_path = bundled_model_source_path(Some(&resource_dir)).unwrap();
+        let source_path =
+            bundled_model_source_path(Some(&resource_dir), SpeechModel::BaseEn).unwrap();
         let _ = std::fs::remove_dir_all(&root);
 
-        assert!(source_path.ends_with(MODEL_FILE_NAME));
+        assert!(source_path.ends_with(&find_model(SpeechModel::BaseEn).file_name));
         assert!(source_path.to_string_lossy().contains(MODEL_ASSET_DIR));
+    }
+
+    #[test]
+    fn ensure_model_available_keeps_supported_models_and_prunes_legacy_files() {
+        let root = temp_root("model-prune");
+        let app_data_dir = root.join("app-data");
+        let resource_dir = root.join("resources");
+        let installed_dir = model_directory(&app_data_dir);
+
+        write_bundled_model_resource(&resource_dir, SpeechModel::BaseEn, b"base model");
+        std::fs::create_dir_all(&installed_dir).unwrap();
+        std::fs::write(
+            installed_dir.join(&find_model(SpeechModel::SmallEn).file_name),
+            b"small model",
+        )
+        .unwrap();
+        std::fs::write(installed_dir.join("ggml-tiny.en.bin"), b"tiny model").unwrap();
+
+        let installed_path =
+            ensure_model_available(&app_data_dir, Some(&resource_dir), SpeechModel::BaseEn)
+                .unwrap();
+
+        assert!(installed_path.ends_with(&find_model(SpeechModel::BaseEn).file_name));
+        assert!(installed_path.exists());
+        assert!(installed_dir.join(&find_model(SpeechModel::SmallEn).file_name).exists());
+        assert!(!installed_dir.join("ggml-tiny.en.bin").exists());
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn install_model_from_reader_adds_small_without_removing_base() {
+        let root = temp_root("reader-install");
+        let app_data_dir = root.join("app-data");
+        let installed_dir = model_directory(&app_data_dir);
+        let small_bytes = b"small model bytes";
+        let small_spec = test_spec(SpeechModel::SmallEn, small_bytes);
+
+        std::fs::create_dir_all(&installed_dir).unwrap();
+        std::fs::write(
+            installed_dir.join(&find_model(SpeechModel::BaseEn).file_name),
+            b"base model",
+        )
+        .unwrap();
+
+        let installed_path =
+            install_model_from_reader(&app_data_dir, &small_spec, Cursor::new(small_bytes))
+                .unwrap();
+
+        assert!(installed_dir.join(&find_model(SpeechModel::BaseEn).file_name).exists());
+        assert!(installed_path.exists());
+        assert!(installed_path.ends_with(&find_model(SpeechModel::SmallEn).file_name));
+
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn install_model_from_reader_cleans_temp_file_on_failure() {
+        let root = temp_root("reader-failure");
+        let app_data_dir = root.join("app-data");
+        let installed_dir = model_directory(&app_data_dir);
+        let spec = test_spec(SpeechModel::SmallEn, b"small model bytes");
+        let temp_path = installed_dir.join(format!("{}.download", spec.file_name));
+
+        let error =
+            install_model_from_reader(&app_data_dir, &spec, BrokenReader::default()).unwrap_err();
+
+        assert!(error.contains("Unable to download the optional whisper.cpp model"));
+        assert!(!temp_path.exists());
+        assert!(!installed_dir.join(&spec.file_name).exists());
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]
@@ -1408,5 +1758,45 @@ mod tests {
         let samples = decode_audio_for_whisper(&cursor.into_inner()).unwrap();
         assert_eq!(samples.len(), 2);
         assert!(samples.iter().all(|sample| (-1.0..=1.0).contains(sample)));
+    }
+
+    fn temp_root(label: &str) -> PathBuf {
+        env::temp_dir().join(format!("tator-{label}-{}", Uuid::new_v4()))
+    }
+
+    fn write_bundled_model_resource(resource_dir: &Path, model: SpeechModel, bytes: &[u8]) {
+        let bundled_dir = resource_dir.join(MODEL_ASSET_DIR);
+        std::fs::create_dir_all(&bundled_dir).unwrap();
+        std::fs::write(bundled_dir.join(&find_model(model).file_name), bytes).unwrap();
+    }
+
+    fn test_spec(model: SpeechModel, bytes: &[u8]) -> WhisperModelSpec {
+        let mut spec = find_model(model).clone();
+        spec.sha1 = sha1_hex(bytes);
+        spec
+    }
+
+    fn sha1_hex(bytes: &[u8]) -> String {
+        let mut hasher = Sha1::new();
+        hasher.update(bytes);
+        format!("{:x}", hasher.finalize())
+    }
+
+    #[derive(Default)]
+    struct BrokenReader {
+        emitted_chunk: bool,
+    }
+
+    impl Read for BrokenReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            if self.emitted_chunk {
+                return Err(io::Error::new(io::ErrorKind::Interrupted, "simulated failure"));
+            }
+
+            let chunk = b"partial";
+            buf[..chunk.len()].copy_from_slice(chunk);
+            self.emitted_chunk = true;
+            Ok(chunk.len())
+        }
     }
 }

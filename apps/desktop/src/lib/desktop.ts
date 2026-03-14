@@ -18,6 +18,7 @@ import type {
   NewHistoryRecord,
   PermissionStatus,
   RecordedAudio,
+  SpeechModel,
   Settings,
   TranscriptionResponse,
 } from "@tator/shared-types";
@@ -133,8 +134,8 @@ export async function getModelStatus(): Promise<ModelStatus> {
   return invokeDesktop<ModelStatus>("get_model_status");
 }
 
-export async function downloadModel(): Promise<void> {
-  return invokeDesktop("download_model");
+export async function downloadModel(model: SpeechModel): Promise<void> {
+  return invokeDesktop("download_model", { model });
 }
 
 export async function openMicrophoneSettings(): Promise<void> {

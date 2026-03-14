@@ -4,6 +4,8 @@ import {
   createWriteStream,
   existsSync,
   mkdirSync,
+  readdirSync,
+  readFileSync,
   renameSync,
   rmSync,
   statSync,
@@ -16,9 +18,15 @@ import { fileURLToPath } from "node:url";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const bundledModelDir = path.resolve(scriptDir, "..", "src-tauri", "target", "bundled-whisper-model");
-const modelFileName = "ggml-tiny.en.bin";
-const modelUrl = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin?download=1";
-const modelSha1 = "c78c86eb1a8faa21b369bcd33207cc90d64ae9df";
+const catalogPath = path.resolve(scriptDir, "..", "src-tauri", "resources", "whisper-models.json");
+const modelCatalog = JSON.parse(readFileSync(catalogPath, "utf8"));
+const bundledModel = modelCatalog.find((entry) => entry.bundled);
+
+if (!bundledModel) {
+  throw new Error(`No bundled whisper.cpp model was defined in ${catalogPath}.`);
+}
+
+const { id: modelId, fileName: modelFileName, url: modelUrl, sha1: modelSha1 } = bundledModel;
 
 function sha1ForFile(filePath) {
   return new Promise((resolve, reject) => {
@@ -66,11 +74,26 @@ async function downloadModel(modelPath) {
   renameSync(tempPath, modelPath);
 }
 
+function removeStaleModels() {
+  for (const entry of readdirSync(bundledModelDir, { withFileTypes: true })) {
+    if (!entry.isFile()) {
+      continue;
+    }
+
+    if (!entry.name.startsWith("ggml-") || !entry.name.endsWith(".bin") || entry.name === modelFileName) {
+      continue;
+    }
+
+    rmSync(path.join(bundledModelDir, entry.name), { force: true });
+  }
+}
+
 async function main() {
   mkdirSync(bundledModelDir, { recursive: true });
 
   const modelPath = path.join(bundledModelDir, modelFileName);
   const manifestPath = path.join(bundledModelDir, "manifest.json");
+  removeStaleModels();
 
   if (!(await verifyExistingModel(modelPath))) {
     console.log(`Downloading bundled whisper.cpp model to ${modelPath}`);
@@ -81,6 +104,7 @@ async function main() {
     manifestPath,
     JSON.stringify(
       {
+        id: modelId,
         fileName: modelFileName,
         sha1: modelSha1,
         sizeBytes: statSync(modelPath).size,

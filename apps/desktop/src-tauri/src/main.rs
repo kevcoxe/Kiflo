@@ -7,6 +7,7 @@ mod media;
 mod models;
 mod permissions;
 mod recording;
+mod whisper_models;
 
 use std::{env, fs, path::PathBuf, sync::Mutex, thread};
 
@@ -14,7 +15,7 @@ use hud::{create_hud_window, hide_hud, set_hud_phase, show_hud};
 use models::{
     CleanupResponse, ClipboardSnapshot, DictationMode, HistoryMetrics, HistoryRecord, HudPhase,
     HudState, ModelStatus, NewHistoryRecord, PermissionStatus, RecordedAudio, Settings,
-    TranscriptionResponse,
+    SpeechModel, TranscriptionResponse,
 };
 use tauri::{
     image::Image,
@@ -93,7 +94,9 @@ fn update_settings(
     let previous = db::get_settings(state.inner().database_path.as_path())?;
     let saved = db::update_settings(state.inner().database_path.as_path(), &settings)?;
     sync_tray_menu(&app, &saved)?;
-    if saved.warm_model_on_launch && !previous.warm_model_on_launch {
+    if saved.warm_model_on_launch
+        && (!previous.warm_model_on_launch || saved.speech_model != previous.speech_model)
+    {
         maybe_prewarm_model(&app);
     }
     Ok(saved)
@@ -150,10 +153,12 @@ fn transcribe_audio(
     mode: DictationMode,
     app_name: Option<String>,
 ) -> Result<TranscriptionResponse, String> {
+    let settings = db::get_settings(state.inner().database_path.as_path())?;
     dictation::transcribe_audio(
         state.inner().app_data_dir.as_path(),
         state.inner().resource_dir.as_deref(),
         &state.inner().model_runtime,
+        settings.speech_model,
         &audio_base64,
         mode,
         app_name,
@@ -182,19 +187,22 @@ fn cleanup_text(
 
 #[tauri::command]
 fn get_model_status(state: State<'_, AppState>) -> Result<ModelStatus, String> {
+    let settings = db::get_settings(state.inner().database_path.as_path())?;
     dictation::get_model_status(
         state.inner().app_data_dir.as_path(),
         state.inner().resource_dir.as_deref(),
         &state.inner().model_runtime,
+        settings.speech_model,
     )
 }
 
 #[tauri::command]
-fn download_model(state: State<'_, AppState>) -> Result<(), String> {
+fn download_model(state: State<'_, AppState>, model: SpeechModel) -> Result<(), String> {
     dictation::download_model(
         state.inner().app_data_dir.as_path(),
         state.inner().resource_dir.as_deref(),
         &state.inner().model_runtime,
+        model,
     )
 }
 
@@ -634,10 +642,14 @@ fn maybe_prewarm_model(app: &AppHandle) {
     let app_handle = app.clone();
     thread::spawn(move || {
         if let Some(state) = app_handle.try_state::<AppState>() {
+            let speech_model = db::get_settings(state.database_path.as_path())
+                .map(|settings| settings.speech_model)
+                .unwrap_or_default();
             let _ = dictation::prewarm_model(
                 state.app_data_dir.as_path(),
                 state.resource_dir.as_deref(),
                 &state.model_runtime,
+                speech_model,
             );
         }
     });

@@ -263,6 +263,8 @@ export default function App() {
 
       <SettingsPanel
         onChange={(nextSettings) => void controller.saveSettings(nextSettings)}
+        onDownloadModel={(model) => void controller.downloadModel(model)}
+        modelStatus={controller.modelStatus}
         settings={controller.settings}
       />
       <MetricsDashboard metrics={controller.historyMetrics} />

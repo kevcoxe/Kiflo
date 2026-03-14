@@ -20,7 +20,7 @@ Tator is a desktop dictation app built as a Tauri app with local transcription a
 1. Install JavaScript dependencies with `npm install`.
 2. Start the desktop UI with `npm run tauri:dev`.
 
-The app now uses a bundled native `whisper.cpp` backend through Rust bindings. `tauri dev` and `tauri build` automatically run `npm run prepare:whisper-assets`, which downloads the official `ggml-tiny.en.bin` model and bundles it into the desktop app. End users do not need Python, `uv`, or any extra model download step.
+The app now uses a bundled native `whisper.cpp` backend through Rust bindings. `tauri dev` and `tauri build` automatically run `npm run prepare:whisper-assets`, which downloads the official `ggml-base.en.bin` model and bundles it into the desktop app. Users can optionally download the larger `ggml-small.en.bin` model from Settings for higher transcription quality.
 
 The shipped desktop app does not talk to a separate HTTP API. Transcription and cleanup run through native Tauri commands.
 
