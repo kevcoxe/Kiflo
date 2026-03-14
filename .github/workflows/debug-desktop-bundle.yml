@@ -63,6 +63,7 @@ jobs:
 
       - name: Resolve debug build metadata
         id: metadata
+        shell: bash
         run: |
           set -euo pipefail
 
