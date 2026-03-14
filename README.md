@@ -63,6 +63,18 @@ To cut a release:
 The workflow publishes unsigned macOS artifacts by default. If you need a signed or notarized
 release, add the relevant Apple credentials as GitHub Actions secrets and extend the workflow.
 
+## Debugging GitHub-Built Bundles
+
+- `npm run debug:desktop:release:local -- v0.2.0` builds the desktop app in a temporary clean
+  worktree using the same high-level steps as the release workflow, then writes a tarred `.app`
+  bundle plus diagnostics to a local output directory.
+- `./scripts/inspect-desktop-bundle.sh /path/to/Tator.app /tmp/tator-diagnostics` inspects a built
+  bundle or bundled runtime and runs packaged-runtime smoke tests for `numpy`, `huggingface_hub`,
+  `mlx.core`, and `mlx_whisper`.
+- The manual GitHub Actions workflow at `.github/workflows/debug-desktop-bundle.yml` builds debug
+  artifacts on pinned `macos-15` and `macos-26` runners, uploads a tarred `.app`, and attaches the
+  same diagnostics so you can compare GitHub bundles against your local known-good build.
+
 ## Current MVP Slice
 
 - Toggle global hotkey (`Option+Space`)

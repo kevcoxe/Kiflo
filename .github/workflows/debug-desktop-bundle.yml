@@ -1,0 +1,101 @@
+name: Debug Desktop Bundle
+
+on:
+  push:
+    branches:
+      - "codex/debug-desktop-bundle"
+  workflow_dispatch:
+    inputs:
+      git_ref:
+        description: Git ref to build
+        required: true
+        default: main
+      release_version:
+        description: Release version or tag to stamp into the desktop app
+        required: true
+        default: v0.2.0
+
+permissions:
+  contents: read
+
+jobs:
+  debug-bundle:
+    name: Debug bundle (${{ matrix.runner }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - macos-15
+          - macos-26
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.git_ref }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 23
+          cache: npm
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Install bundled MLX helper runtime
+        run: uv sync --project apps/mlx-runtime --extra dev
+
+      - name: Sync desktop version from input
+        run: node ./scripts/sync-desktop-version.mjs "${{ inputs.release_version }}"
+
+      - name: Build Tauri bundle
+        env:
+          CI: "true"
+        run: npm run tauri:build --workspace @tator/desktop
+
+      - name: Collect bundle diagnostics
+        env:
+          RELEASE_VERSION: ${{ inputs.release_version }}
+          RUNNER_LABEL: ${{ matrix.runner }}
+        run: |
+          set -euo pipefail
+
+          app_path="$(find apps/desktop/src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' -print | sort | head -n 1)"
+          if [[ -z "$app_path" ]]; then
+            echo "Could not find built .app bundle." >&2
+            exit 1
+          fi
+
+          version="${RELEASE_VERSION#v}"
+          artifact_root="debug-artifacts/${RUNNER_LABEL}"
+          archive_name="Tator-${version}-${RUNNER_LABEL}.app.tar.gz"
+
+          mkdir -p "$artifact_root"
+          tar -C "$(dirname "$app_path")" -czf "$artifact_root/$archive_name" "$(basename "$app_path")"
+
+          ./scripts/inspect-desktop-bundle.sh "$app_path" "$artifact_root/diagnostics"
+
+          {
+            echo "release_version=${RELEASE_VERSION}"
+            echo "runner_label=${RUNNER_LABEL}"
+            echo "git_ref=${{ inputs.git_ref }}"
+            echo "git_sha=$(git rev-parse HEAD)"
+            echo "app_path=$app_path"
+            echo "archive_name=$archive_name"
+          } >"$artifact_root/metadata.txt"
+
+      - name: Upload debug artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-debug-${{ matrix.runner }}-${{ inputs.release_version }}
+          path: debug-artifacts/${{ matrix.runner }}
+          if-no-files-found: error
+          retention-days: 14
