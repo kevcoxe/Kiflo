@@ -37,10 +37,10 @@ repo's GitHub Releases page.
 
 To cut a release:
 
-1. Run `npm run release:prep -- v0.1.4` to draft the next desktop release entry in `CHANGELOG.md`.
+1. Run `npm run release:prep -- v0.3.0` to draft the next desktop release entry in `CHANGELOG.md`.
 2. Review and polish `CHANGELOG.md`.
 3. Commit the changelog and any related release changes.
-4. Push a version tag that starts with `v`, for example `v0.1.4`.
+4. Push a version tag that starts with `v`, for example `v0.3.0`.
 5. GitHub Actions will sync the desktop app version from that tag, read the matching section from
    `CHANGELOG.md`, and attach the macOS and Windows Tauri bundles to a GitHub Release for that tag.
 
@@ -50,7 +50,7 @@ workflow.
 
 ## Debugging GitHub-Built Bundles
 
-- `npm run debug:desktop:release:local -- v0.2.0` builds the desktop app in a temporary clean
+- `npm run debug:desktop:release:local -- v0.3.0` builds the desktop app in a temporary clean
   worktree using the same high-level steps as the release workflow, then writes a tarred `.app`
   bundle plus metadata to a local output directory.
 - The manual GitHub Actions workflow at `.github/workflows/debug-desktop-bundle.yml` builds debug

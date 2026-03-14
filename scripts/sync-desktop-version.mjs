@@ -16,7 +16,7 @@ function normalizeVersion(input) {
   );
 
   if (!match) {
-    fail(`Invalid version "${input}". Use semver like v0.2.0 or 0.2.0.`);
+    fail(`Invalid version "${input}". Use semver like v0.3.0 or 0.3.0.`);
   }
 
   return raw;
@@ -31,7 +31,7 @@ function writeJsonVersion(filePath, version) {
 const rawVersion = process.argv[2];
 
 if (!rawVersion) {
-  fail("Usage: node ./scripts/sync-desktop-version.mjs v0.2.0");
+  fail("Usage: node ./scripts/sync-desktop-version.mjs v0.3.0");
 }
 
 const version = normalizeVersion(rawVersion);

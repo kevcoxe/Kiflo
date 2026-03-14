@@ -4,7 +4,7 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: ./scripts/debug-desktop-release-local.sh v0.2.0 [--ref HEAD] [--output-dir /tmp/out] [--allow-dirty] [--keep-worktree]
+Usage: ./scripts/debug-desktop-release-local.sh v0.3.0 [--ref HEAD] [--output-dir /tmp/out] [--allow-dirty] [--keep-worktree]
 
 Builds the desktop app in a temporary git worktree using the same high-level steps as the
 GitHub release workflow and archives the built .app next to a small metadata file.
