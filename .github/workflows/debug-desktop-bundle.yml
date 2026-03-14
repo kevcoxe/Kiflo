@@ -33,7 +33,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.git_ref }}
+          ref: ${{ github.event.inputs.git_ref || github.ref_name }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -53,8 +53,25 @@ jobs:
       - name: Install bundled MLX helper runtime
         run: uv sync --project apps/mlx-runtime --extra dev
 
+      - name: Resolve debug build metadata
+        id: metadata
+        run: |
+          set -euo pipefail
+
+          git_ref="${{ github.event.inputs.git_ref || github.ref_name }}"
+          release_version="${{ github.event.inputs.release_version }}"
+
+          if [[ -z "$release_version" ]]; then
+            release_version="v$(node -p "require('./apps/desktop/package.json').version")"
+          fi
+
+          {
+            echo "git_ref=$git_ref"
+            echo "release_version=$release_version"
+          } >>"$GITHUB_OUTPUT"
+
       - name: Sync desktop version from input
-        run: node ./scripts/sync-desktop-version.mjs "${{ inputs.release_version }}"
+        run: node ./scripts/sync-desktop-version.mjs "${{ steps.metadata.outputs.release_version }}"
 
       - name: Build Tauri bundle
         env:
@@ -63,8 +80,9 @@ jobs:
 
       - name: Collect bundle diagnostics
         env:
-          RELEASE_VERSION: ${{ inputs.release_version }}
+          RELEASE_VERSION: ${{ steps.metadata.outputs.release_version }}
           RUNNER_LABEL: ${{ matrix.runner }}
+          GIT_REF_NAME: ${{ steps.metadata.outputs.git_ref }}
         run: |
           set -euo pipefail
 
@@ -86,7 +104,7 @@ jobs:
           {
             echo "release_version=${RELEASE_VERSION}"
             echo "runner_label=${RUNNER_LABEL}"
-            echo "git_ref=${{ inputs.git_ref }}"
+            echo "git_ref=${GIT_REF_NAME}"
             echo "git_sha=$(git rev-parse HEAD)"
             echo "app_path=$app_path"
             echo "archive_name=$archive_name"
@@ -95,7 +113,7 @@ jobs:
       - name: Upload debug artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: desktop-debug-${{ matrix.runner }}-${{ inputs.release_version }}
+          name: desktop-debug-${{ matrix.runner }}-${{ steps.metadata.outputs.release_version }}
           path: debug-artifacts/${{ matrix.runner }}
           if-no-files-found: error
           retention-days: 14
