@@ -19,11 +19,13 @@ jobs:
             cmake_c_flags: -D_LIBCPP_DISABLE_AVAILABILITY
             cmake_cxx_flags: -D_LIBCPP_DISABLE_AVAILABILITY
             macos_deployment_target: "15.0"
+            ggml_native: "OFF"
           - runner: windows-2025
             platform_name: windows
             cmake_c_flags: ""
             cmake_cxx_flags: ""
             macos_deployment_target: ""
+            ggml_native: ""
 
     runs-on: ${{ matrix.runner }}
     env:
@@ -31,6 +33,7 @@ jobs:
       CMAKE_CXX_FLAGS: ${{ matrix.cmake_cxx_flags }}
       MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
       CMAKE_OSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
+      GGML_NATIVE: ${{ matrix.ggml_native }}
 
     steps:
       - name: Check out repository

@@ -23,6 +23,7 @@ if (process.platform === "darwin") {
   env.MACOSX_DEPLOYMENT_TARGET = env.MACOSX_DEPLOYMENT_TARGET || "15.0";
   env.CMAKE_OSX_DEPLOYMENT_TARGET =
     env.CMAKE_OSX_DEPLOYMENT_TARGET || env.MACOSX_DEPLOYMENT_TARGET;
+  env.GGML_NATIVE = env.GGML_NATIVE || "OFF";
 }
 
 const child = spawn(tauriBinary, args, {
