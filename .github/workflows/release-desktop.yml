@@ -10,7 +10,27 @@ permissions:
 
 jobs:
   release:
-    runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            platform_name: macos
+            cmake_c_flags: -D_LIBCPP_DISABLE_AVAILABILITY
+            cmake_cxx_flags: -D_LIBCPP_DISABLE_AVAILABILITY
+            macos_deployment_target: "15.0"
+          - runner: windows-2025
+            platform_name: windows
+            cmake_c_flags: ""
+            cmake_cxx_flags: ""
+            macos_deployment_target: ""
+
+    runs-on: ${{ matrix.runner }}
+    env:
+      CMAKE_C_FLAGS: ${{ matrix.cmake_c_flags }}
+      CMAKE_CXX_FLAGS: ${{ matrix.cmake_cxx_flags }}
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
+      CMAKE_OSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
 
     steps:
       - name: Check out repository
@@ -22,17 +42,11 @@ jobs:
           node-version: 23
           cache: npm
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install JavaScript dependencies
         run: npm ci
-
-      - name: Install bundled MLX helper runtime
-        run: uv sync --project apps/mlx-runtime --extra dev
 
       - name: Sync desktop version from tag
         env:

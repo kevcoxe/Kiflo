@@ -25,9 +25,23 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        runner:
-          - macos-15
-          - macos-26
+        include:
+          - runner: macos-15
+            platform_name: macos
+            cmake_c_flags: -D_LIBCPP_DISABLE_AVAILABILITY
+            cmake_cxx_flags: -D_LIBCPP_DISABLE_AVAILABILITY
+            macos_deployment_target: "15.0"
+          - runner: windows-2025
+            platform_name: windows
+            cmake_c_flags: ""
+            cmake_cxx_flags: ""
+            macos_deployment_target: ""
+
+    env:
+      CMAKE_C_FLAGS: ${{ matrix.cmake_c_flags }}
+      CMAKE_CXX_FLAGS: ${{ matrix.cmake_cxx_flags }}
+      MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
+      CMAKE_OSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
 
     steps:
       - name: Check out repository
@@ -41,17 +55,11 @@ jobs:
           node-version: 23
           cache: npm
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install JavaScript dependencies
         run: npm ci
-
-      - name: Install bundled MLX helper runtime
-        run: uv sync --project apps/mlx-runtime --extra dev
 
       - name: Resolve debug build metadata
         id: metadata
@@ -78,69 +86,29 @@ jobs:
           CI: "true"
         run: npm run tauri:build --workspace @tator/desktop
 
-      - name: Collect bundle diagnostics
+      - name: Collect bundle artifacts
         env:
           RELEASE_VERSION: ${{ steps.metadata.outputs.release_version }}
           RUNNER_LABEL: ${{ matrix.runner }}
           GIT_REF_NAME: ${{ steps.metadata.outputs.git_ref }}
+        shell: bash
         run: |
           set -euo pipefail
 
-          app_path="$(find apps/desktop/src-tauri/target/release/bundle/macos -maxdepth 1 -name '*.app' -print | sort | head -n 1)"
-          if [[ -z "$app_path" ]]; then
-            echo "Could not find built .app bundle." >&2
-            exit 1
-          fi
-
-          version="${RELEASE_VERSION#v}"
           artifact_root="debug-artifacts/${RUNNER_LABEL}"
-          archive_name="Tator-${version}-${RUNNER_LABEL}.app.tar.gz"
 
           mkdir -p "$artifact_root"
-          tar -C "$(dirname "$app_path")" -czf "$artifact_root/$archive_name" "$(basename "$app_path")"
-
-          ./scripts/inspect-desktop-bundle.sh "$app_path" "$artifact_root/diagnostics"
+          cp -R apps/desktop/src-tauri/target/release/bundle "$artifact_root/bundle"
+          cp -R apps/desktop/src-tauri/target/bundled-whisper-model "$artifact_root/bundled-whisper-model"
 
           {
             echo "release_version=${RELEASE_VERSION}"
             echo "runner_label=${RUNNER_LABEL}"
             echo "git_ref=${GIT_REF_NAME}"
             echo "git_sha=$(git rev-parse HEAD)"
-            echo "app_path=$app_path"
-            echo "archive_name=$archive_name"
+            echo "platform_name=${{ matrix.platform_name }}"
+            echo "bundle_dir=apps/desktop/src-tauri/target/release/bundle"
           } >"$artifact_root/metadata.txt"
-
-      - name: Validate bundled runtime diagnostics
-        env:
-          RUNNER_LABEL: ${{ matrix.runner }}
-        run: |
-          set -euo pipefail
-
-          diagnostics_dir="debug-artifacts/${RUNNER_LABEL}/diagnostics"
-          required_exit_files=(
-            "binaries/python_codesign_verify.exit.txt"
-            "binaries/libpython_codesign_verify.exit.txt"
-            "smoke-tests/00-python-startup.exit.txt"
-            "smoke-tests/01-import-core-deps.exit.txt"
-          )
-
-          for relative_path in "${required_exit_files[@]}"; do
-            exit_path="${diagnostics_dir}/${relative_path}"
-            if [[ ! -f "$exit_path" ]]; then
-              echo "Missing required diagnostics file: $exit_path" >&2
-              exit 1
-            fi
-
-            status="$(tr -d '\n' < "$exit_path")"
-            if [[ "$status" != "0" ]]; then
-              echo "Required bundled-runtime validation failed: ${relative_path} (exit ${status})" >&2
-              stderr_path="${exit_path%.exit.txt}.stderr.txt"
-              if [[ -f "$stderr_path" ]]; then
-                sed -n '1,120p' "$stderr_path" >&2
-              fi
-              exit 1
-            fi
-          done
 
       - name: Upload debug artifacts
         if: ${{ always() }}

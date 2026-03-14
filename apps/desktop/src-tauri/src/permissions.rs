@@ -63,13 +63,13 @@ pub fn restore_clipboard(snapshot: ClipboardSnapshot) -> Result<(), String> {
 pub fn simulate_paste() -> Result<(), String> {
     let mut enigo = Enigo::new(&Settings::default()).map_err(|error| error.to_string())?;
     enigo
-        .key(Key::Meta, Direction::Press)
+        .key(paste_modifier_key(), Direction::Press)
         .map_err(|error| error.to_string())?;
     enigo
         .key(Key::Unicode('v'), Direction::Click)
         .map_err(|error| error.to_string())?;
     enigo
-        .key(Key::Meta, Direction::Release)
+        .key(paste_modifier_key(), Direction::Release)
         .map_err(|error| error.to_string())?;
     Ok(())
 }
@@ -114,16 +114,19 @@ pub fn frontmost_app() -> Result<Option<String>, String> {
 pub fn open_microphone_settings() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
-            .status()
-            .map_err(|error| error.to_string())?;
-        Ok(())
+        open_system_settings_uri(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone",
+        )
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
-        Err("Opening system privacy settings is only supported on macOS.".to_string())
+        open_system_settings_uri("ms-settings:privacy-microphone")
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        Err("Opening microphone settings is only supported on macOS and Windows.".to_string())
     }
 }
 
@@ -180,7 +183,7 @@ pub fn request_accessibility_access() -> Result<(), String> {
 
     #[cfg(not(target_os = "macos"))]
     {
-        Err("Requesting accessibility access is only supported on macOS.".to_string())
+        Ok(())
     }
 }
 
@@ -218,24 +221,60 @@ fn accessibility_status() -> String {
 
     #[cfg(not(target_os = "macos"))]
     {
-        "unknown".to_string()
+        "granted".to_string()
     }
 }
 
 pub fn open_accessibility_settings() -> Result<(), String> {
     #[cfg(target_os = "macos")]
     {
-        Command::new("open")
-            .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-            .status()
-            .map_err(|error| error.to_string())?;
-        Ok(())
+        open_system_settings_uri(
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+        )
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "windows")]
     {
-        Err("Opening accessibility settings is only supported on macOS.".to_string())
+        open_system_settings_uri("ms-settings:easeofaccess-keyboard")
     }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    {
+        Err("Opening accessibility settings is only supported on macOS and Windows.".to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn open_system_settings_uri(uri: &str) -> Result<(), String> {
+    Command::new("open")
+        .arg(uri)
+        .status()
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn open_system_settings_uri(uri: &str) -> Result<(), String> {
+    Command::new("cmd")
+        .args(["/C", "start", "", uri])
+        .status()
+        .map_err(|error| error.to_string())?;
+    Ok(())
+}
+
+#[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+fn open_system_settings_uri(_: &str) -> Result<(), String> {
+    Err("Opening system settings is not supported on this platform.".to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn paste_modifier_key() -> Key {
+    Key::Meta
+}
+
+#[cfg(not(target_os = "macos"))]
+fn paste_modifier_key() -> Key {
+    Key::Control
 }
 
 fn build_probe_stream_f32(

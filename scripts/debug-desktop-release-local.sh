@@ -7,7 +7,7 @@ usage() {
 Usage: ./scripts/debug-desktop-release-local.sh v0.2.0 [--ref HEAD] [--output-dir /tmp/out] [--allow-dirty] [--keep-worktree]
 
 Builds the desktop app in a temporary git worktree using the same high-level steps as the
-GitHub release workflow, archives the built .app, and writes diagnostics next to it.
+GitHub release workflow and archives the built .app next to a small metadata file.
 EOF
 }
 
@@ -128,7 +128,7 @@ run_in_worktree() {
 printf 'Building release parity bundle in %s\n' "$worktree_dir"
 
 run_in_worktree env CI=true npm ci
-run_in_worktree env CI=true uv sync --project apps/mlx-runtime --extra dev
+run_in_worktree env CI=true npm run prepare:whisper-assets --workspace @tator/desktop
 run_in_worktree node ./scripts/sync-desktop-version.mjs "$tag_name"
 run_in_worktree env CI=true npm run tauri:build --workspace @tator/desktop
 
@@ -146,8 +146,6 @@ archive_name="$(basename "$app_path" .app)-${tag_name#v}-local.app.tar.gz"
 archive_path="$output_dir/$archive_name"
 tar -C "$(dirname "$app_path")" -czf "$archive_path" "$(basename "$app_path")"
 
-"$worktree_dir/scripts/inspect-desktop-bundle.sh" "$app_path" "$output_dir/diagnostics"
-
 {
   printf 'tag_name=%s\n' "$tag_name"
   printf 'git_ref=%s\n' "$git_ref"
@@ -155,8 +153,8 @@ tar -C "$(dirname "$app_path")" -czf "$archive_path" "$(basename "$app_path")"
   printf 'worktree_dir=%s\n' "$worktree_dir"
   printf 'app_path=%s\n' "$app_path"
   printf 'archive_path=%s\n' "$archive_path"
-  printf 'diagnostics_dir=%s\n' "$output_dir/diagnostics"
+  printf 'model_manifest=%s\n' "$worktree_dir/apps/desktop/src-tauri/target/bundled-whisper-model/manifest.json"
 } >"$output_dir/metadata.txt"
 
 printf 'Built archive: %s\n' "$archive_path"
-printf 'Diagnostics: %s\n' "$output_dir/diagnostics"
+printf 'Metadata: %s\n' "$output_dir/metadata.txt"

@@ -4,14 +4,15 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prepare:whisper-assets": "node ./scripts/prepare-whisper-assets.mjs",
     "dev": "vite",
     "build": "tsc && vite build",
-    "prepare:mlx-runtime": "node ./scripts/prepare-mlx-runtime.mjs",
+    "prepare:mlx-runtime": "npm run prepare:whisper-assets",
     "preview": "vite preview",
     "test": "vitest run",
-    "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri": "node ./scripts/run-tauri.mjs",
+    "tauri:dev": "node ./scripts/run-tauri.mjs dev",
+    "tauri:build": "node ./scripts/run-tauri.mjs build"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

@@ -1,34 +1,24 @@
 use std::{
     env, fs,
-    io::{BufRead, BufReader, Cursor, Read, Write},
-    os::unix::fs::PermissionsExt,
+    io::Cursor,
     path::{Path, PathBuf},
-    process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio},
     sync::Mutex,
 };
 
 use base64::{engine::general_purpose::STANDARD, Engine as _};
-use hound::WavReader;
-use serde::{Deserialize, Serialize};
-use uuid::Uuid;
+use hound::{SampleFormat, WavReader};
+use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 use crate::models::{CleanupResponse, DictationMode, ModelStatus, TranscriptionResponse};
 
-const HELPER_SCRIPT: &str = include_str!("../resources/python/tator_mlx_helper.py");
 const MODEL_LANGUAGE: &str = "en";
-const MODEL_NAME: &str = "whisper-tiny.en-mlx";
-const MODEL_CONFIG_BYTES: &[u8] = include_bytes!(
-    "../../../../models--mlx-community--whisper-tiny.en-mlx/blobs/61ae64eae9676a5a89f3069a90d7109b45ce9447"
-);
-const MODEL_WEIGHTS_BYTES: &[u8] = include_bytes!(
-    "../../../../models--mlx-community--whisper-tiny.en-mlx/blobs/4627203f0807d6496dda0d200e893b04ff24c98e73aa51c485c06203a0330b17"
-);
-const MODEL_README_BYTES: &[u8] = include_bytes!(
-    "../../../../models--mlx-community--whisper-tiny.en-mlx/blobs/d6e15b759c0ee16b72be3aa70c3d74e62e6c9992"
-);
+const MODEL_FILE_NAME: &str = "ggml-tiny.en.bin";
+const MODEL_ASSET_DIR: &str = "whisper";
+const MODEL_INSTALL_DIR: &str = "whisper.cpp";
 const MOCK_PROVIDER: &str = "mock";
 const NATIVE_PROVIDER: &str = "native";
-const MLX_PROVIDER: &str = "mlx_whisper";
+const WHISPER_CPP_PROVIDER: &str = "whisper_cpp";
+const TARGET_SAMPLE_RATE: u32 = 16_000;
 const QUESTION_OPENERS: &[&str] = &[
     "can", "could", "would", "will", "should", "is", "are", "do", "does", "did",
 ];
@@ -123,16 +113,16 @@ const VALUE_LIKE_TOKENS: &[&str] = &[
 ];
 const VALUE_LIKE_CONNECTORS: &[&str] = &["and", "or"];
 
+#[derive(Debug, Default)]
 pub struct ModelRuntimeState {
     pub downloading: bool,
     pub last_error: Option<String>,
-    helper: Option<LiveHelperProcess>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AsrProviderKind {
     Mock,
-    MlxWhisper,
+    WhisperCpp,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -152,208 +142,6 @@ impl TypingStyle {
     }
 }
 
-#[derive(Debug, Deserialize)]
-struct HelperTranscriptionResponse {
-    text: String,
-    language: Option<String>,
-}
-
-struct HelperRunner {
-    program: String,
-    base_args: Vec<String>,
-    env_vars: Vec<(String, String)>,
-    supports_persistent_process: bool,
-}
-
-struct BundledPythonRuntime {
-    executable: PathBuf,
-    python_home: PathBuf,
-    site_packages: PathBuf,
-}
-
-struct LiveHelperProcess {
-    child: Child,
-    stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
-    stderr: ChildStderr,
-}
-
-#[derive(Serialize)]
-struct HelperServerRequest {
-    command: &'static str,
-    audio_path: String,
-    model_path: String,
-    language: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct HelperServerResponse {
-    text: Option<String>,
-    language: Option<String>,
-    status: Option<String>,
-    error: Option<String>,
-}
-
-#[derive(Debug)]
-enum PersistentHelperError {
-    Restartable(String),
-    Message(String),
-}
-
-impl std::fmt::Debug for ModelRuntimeState {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("ModelRuntimeState")
-            .field("downloading", &self.downloading)
-            .field("last_error", &self.last_error)
-            .field("helper_running", &self.helper.is_some())
-            .finish()
-    }
-}
-
-impl Default for ModelRuntimeState {
-    fn default() -> Self {
-        Self {
-            downloading: false,
-            last_error: None,
-            helper: None,
-        }
-    }
-}
-
-impl Drop for LiveHelperProcess {
-    fn drop(&mut self) {
-        let _ = self.stdin.flush();
-        let _ = self.child.kill();
-        let _ = self.child.wait();
-    }
-}
-
-impl LiveHelperProcess {
-    fn spawn(runner: &HelperRunner) -> Result<Self, String> {
-        let mut command = Command::new(&runner.program);
-        command
-            .args(&runner.base_args)
-            .arg("serve")
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
-        for (key, value) in &runner.env_vars {
-            command.env(key, value);
-        }
-
-        let mut child = command.spawn().map_err(|error| {
-            format!(
-                "Unable to launch the local transcription helper using `{}`: {error}",
-                runner.program
-            )
-        })?;
-        let stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| "The local transcription helper did not expose stdin.".to_string())?;
-        let stdout = child
-            .stdout
-            .take()
-            .ok_or_else(|| "The local transcription helper did not expose stdout.".to_string())?;
-        let stderr = child
-            .stderr
-            .take()
-            .ok_or_else(|| "The local transcription helper did not expose stderr.".to_string())?;
-
-        Ok(Self {
-            child,
-            stdin,
-            stdout: BufReader::new(stdout),
-            stderr,
-        })
-    }
-
-    fn transcribe(
-        &mut self,
-        audio_path: &Path,
-        model_path: &Path,
-        language: &str,
-    ) -> Result<HelperTranscriptionResponse, PersistentHelperError> {
-        let request = HelperServerRequest {
-            command: "transcribe",
-            audio_path: audio_path.to_string_lossy().into_owned(),
-            model_path: model_path.to_string_lossy().into_owned(),
-            language: language.to_string(),
-        };
-        let response = self.send_request(&request)?;
-        if let Some(error) = response.error {
-            return Err(PersistentHelperError::Message(error));
-        }
-
-        Ok(HelperTranscriptionResponse {
-            text: response.text.unwrap_or_default(),
-            language: response.language,
-        })
-    }
-
-    fn preload_model(&mut self, model_path: &Path) -> Result<(), PersistentHelperError> {
-        let request = serde_json::json!({
-            "command": "preload-model",
-            "model_path": model_path.to_string_lossy(),
-        });
-        let response = self.send_request(&request)?;
-        if let Some(error) = response.error {
-            return Err(PersistentHelperError::Message(error));
-        }
-        if response.status.as_deref() == Some("ready") {
-            Ok(())
-        } else {
-            Err(PersistentHelperError::Restartable(
-                "The local transcription helper returned an unexpected preload response."
-                    .to_string(),
-            ))
-        }
-    }
-
-    fn send_request<T: Serialize>(
-        &mut self,
-        request: &T,
-    ) -> Result<HelperServerResponse, PersistentHelperError> {
-        let serialized = serde_json::to_string(request)
-            .map_err(|error| PersistentHelperError::Message(error.to_string()))?;
-        self.stdin
-            .write_all(serialized.as_bytes())
-            .and_then(|_| self.stdin.write_all(b"\n"))
-            .and_then(|_| self.stdin.flush())
-            .map_err(|error| PersistentHelperError::Restartable(error.to_string()))?;
-
-        let mut line = String::new();
-        let bytes_read = self
-            .stdout
-            .read_line(&mut line)
-            .map_err(|error| PersistentHelperError::Restartable(error.to_string()))?;
-        if bytes_read == 0 {
-            return Err(PersistentHelperError::Restartable(self.exit_message()));
-        }
-
-        serde_json::from_str(line.trim()).map_err(|error| {
-            PersistentHelperError::Restartable(format!(
-                "The local transcription helper returned invalid JSON: {error}"
-            ))
-        })
-    }
-
-    fn exit_message(&mut self) -> String {
-        let mut stderr = String::new();
-        let _ = self.stderr.read_to_string(&mut stderr);
-        let status = self.child.wait().ok();
-        let stderr = stderr.trim();
-        if !stderr.is_empty() {
-            stderr.to_string()
-        } else if let Some(status) = status {
-            format!("The local transcription helper exited unexpectedly with status {status}.")
-        } else {
-            "The local transcription helper exited unexpectedly.".to_string()
-        }
-    }
-}
-
 pub fn transcribe_audio(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
@@ -369,8 +157,8 @@ pub fn transcribe_audio(
 
     match selected_provider() {
         AsrProviderKind::Mock => Ok(mock_transcription(mode, app_name, duration_ms)),
-        AsrProviderKind::MlxWhisper => {
-            transcribe_with_helper(app_data_dir, resource_dir, runtime, &audio, duration_ms)
+        AsrProviderKind::WhisperCpp => {
+            transcribe_with_whisper_cpp(app_data_dir, resource_dir, runtime, &audio, duration_ms)
         }
     }
 }
@@ -420,12 +208,13 @@ pub fn get_model_status(
         });
     }
 
-    let install_error = ensure_model_installed(app_data_dir).err();
-    let runtime_error = helper_runtime_availability_error(app_data_dir, resource_dir);
-    let error = state.last_error.clone().or(runtime_error).or(install_error);
+    let error = state
+        .last_error
+        .clone()
+        .or_else(|| bundled_model_availability_error(app_data_dir, resource_dir));
 
     Ok(ModelStatus {
-        installed: model_is_installed(app_data_dir),
+        installed: model_is_available(app_data_dir, resource_dir),
         downloading: state.downloading,
         progress: None,
         error,
@@ -441,7 +230,7 @@ pub fn download_model(
         return Ok(());
     }
 
-    if let Some(error) = helper_runtime_availability_error(app_data_dir, resource_dir) {
+    if let Some(error) = bundled_model_availability_error(app_data_dir, resource_dir) {
         return Err(error);
     }
 
@@ -453,15 +242,12 @@ pub fn download_model(
         state.last_error = None;
     }
 
-    let result = ensure_model_installed(app_data_dir).map(|_| ());
+    let result = ensure_model_installed(app_data_dir, resource_dir).map(|_| ());
 
     let mut state = runtime
         .lock()
         .map_err(|_| "Model status lock poisoned.".to_string())?;
     state.downloading = false;
-    if result.is_ok() {
-        state.helper.take();
-    }
     state.last_error = result.as_ref().err().cloned();
 
     result
@@ -472,11 +258,11 @@ pub fn prewarm_model(
     resource_dir: Option<&Path>,
     runtime: &Mutex<ModelRuntimeState>,
 ) -> Result<(), String> {
-    if selected_provider() != AsrProviderKind::MlxWhisper {
+    if selected_provider() != AsrProviderKind::WhisperCpp {
         return Ok(());
     }
 
-    if let Some(error) = helper_runtime_availability_error(app_data_dir, resource_dir) {
+    if let Some(error) = bundled_model_availability_error(app_data_dir, resource_dir) {
         let mut state = runtime
             .lock()
             .map_err(|_| "Model status lock poisoned.".to_string())?;
@@ -484,23 +270,14 @@ pub fn prewarm_model(
         return Err(error);
     }
 
-    let model_dir = ensure_model_installed(app_data_dir)?;
-    let helper_script = ensure_helper_script(app_data_dir)?;
-    let runner = resolve_helper_runner(app_data_dir, resource_dir, &helper_script)?;
-    if !runner.supports_persistent_process {
-        return Ok(());
-    }
+    let result = ensure_model_installed(app_data_dir, resource_dir)
+        .and_then(|model_path| load_whisper_context(&model_path).map(|_| ()));
 
     let mut state = runtime
         .lock()
         .map_err(|_| "Model status lock poisoned.".to_string())?;
-    match preload_with_persistent_helper(&mut state, &runner, &model_dir) {
+    match result {
         Ok(()) => {
-            state.last_error = None;
-            Ok(())
-        }
-        Err(error) if should_tolerate_prewarm_failure(&error) => {
-            state.helper.take();
             state.last_error = None;
             Ok(())
         }
@@ -511,41 +288,16 @@ pub fn prewarm_model(
     }
 }
 
-fn transcribe_with_helper(
+fn transcribe_with_whisper_cpp(
     app_data_dir: &Path,
     resource_dir: Option<&Path>,
     runtime: &Mutex<ModelRuntimeState>,
     audio: &[u8],
     duration_ms: i64,
 ) -> Result<TranscriptionResponse, String> {
-    let model_dir = ensure_model_installed(app_data_dir)?;
-    let helper_script = ensure_helper_script(app_data_dir)?;
-    let runner = resolve_helper_runner(app_data_dir, resource_dir, &helper_script)?;
-    let temp_audio_path = env::temp_dir().join(format!("tator-audio-{}.wav", Uuid::new_v4()));
-    fs::write(&temp_audio_path, audio)
-        .map_err(|error| format!("Unable to write temporary audio: {error}"))?;
-
-    let response = if runner.supports_persistent_process {
-        let result = {
-            let mut state = runtime
-                .lock()
-                .map_err(|_| "Model status lock poisoned.".to_string())?;
-            transcribe_with_persistent_helper(
-                &mut state,
-                &runner,
-                &temp_audio_path,
-                &model_dir,
-                MODEL_LANGUAGE,
-            )
-        };
-        let _ = fs::remove_file(&temp_audio_path);
-        result?
-    } else {
-        let result =
-            transcribe_with_one_shot_helper(&runner, &temp_audio_path, &model_dir, MODEL_LANGUAGE);
-        let _ = fs::remove_file(&temp_audio_path);
-        result?
-    };
+    let model_path = ensure_model_installed(app_data_dir, resource_dir)?;
+    let samples = decode_audio_for_whisper(audio)?;
+    let raw_text = transcribe_with_model(&model_path, &samples, MODEL_LANGUAGE)?;
 
     {
         let mut state = runtime
@@ -554,7 +306,7 @@ fn transcribe_with_helper(
         state.last_error = None;
     }
 
-    let raw_text = response.text.trim().to_string();
+    let raw_text = raw_text.trim().to_string();
     if raw_text.is_empty() {
         return Err(
             "No speech was detected in the recording. Try speaking louder or checking the selected microphone."
@@ -564,133 +316,133 @@ fn transcribe_with_helper(
 
     Ok(TranscriptionResponse {
         raw_text,
-        language: response
-            .language
-            .unwrap_or_else(|| MODEL_LANGUAGE.to_string()),
+        language: MODEL_LANGUAGE.to_string(),
         duration_ms,
-        provider: MLX_PROVIDER.to_string(),
+        provider: WHISPER_CPP_PROVIDER.to_string(),
     })
 }
 
-fn transcribe_with_one_shot_helper(
-    runner: &HelperRunner,
-    audio_path: &Path,
-    model_dir: &Path,
-    language: &str,
-) -> Result<HelperTranscriptionResponse, String> {
-    let mut command = Command::new(&runner.program);
-    command
-        .args(&runner.base_args)
-        .arg("transcribe")
-        .arg("--audio-path")
-        .arg(audio_path)
-        .arg("--model-path")
-        .arg(model_dir)
-        .arg("--language")
-        .arg(language);
-    for (key, value) in &runner.env_vars {
-        command.env(key, value);
+fn decode_audio_for_whisper(audio_bytes: &[u8]) -> Result<Vec<f32>, String> {
+    let mut reader = WavReader::new(Cursor::new(audio_bytes))
+        .map_err(|error| format!("Unable to decode recorded audio as WAV: {error}"))?;
+    let spec = reader.spec();
+    if spec.sample_rate == 0 {
+        return Err("Recorded audio did not include a valid sample rate.".to_string());
+    }
+    if spec.channels == 0 {
+        return Err("Recorded audio did not include any channels.".to_string());
     }
 
-    let output = command.output().map_err(|error| {
-        format!(
-            "Unable to launch the local transcription helper using `{}`: {error}",
-            runner.program
-        )
+    let interleaved = match (spec.sample_format, spec.bits_per_sample) {
+        (SampleFormat::Int, 16) => reader
+            .samples::<i16>()
+            .map(|sample| {
+                sample
+                    .map(|value| f32::from(value) / f32::from(i16::MAX))
+                    .map_err(|error| error.to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("Unable to read recorded PCM samples: {error}"))?,
+        (SampleFormat::Float, 32) => reader
+            .samples::<f32>()
+            .map(|sample| {
+                sample
+                    .map(|value| value.clamp(-1.0, 1.0))
+                    .map_err(|error| error.to_string())
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|error| format!("Unable to read recorded PCM samples: {error}"))?,
+        _ => {
+            return Err(format!(
+                "Recorded audio format {:?}/{}-bit is not supported yet.",
+                spec.sample_format, spec.bits_per_sample
+            ))
+        }
+    };
+
+    let mono = downmix_to_mono(&interleaved, usize::from(spec.channels));
+    Ok(resample_audio(&mono, spec.sample_rate, TARGET_SAMPLE_RATE))
+}
+
+fn downmix_to_mono(interleaved: &[f32], channels: usize) -> Vec<f32> {
+    if channels <= 1 {
+        return interleaved.to_vec();
+    }
+
+    interleaved
+        .chunks(channels)
+        .map(|frame| frame.iter().copied().sum::<f32>() / channels as f32)
+        .collect()
+}
+
+fn resample_audio(samples: &[f32], input_sample_rate: u32, output_sample_rate: u32) -> Vec<f32> {
+    if samples.is_empty() || input_sample_rate == 0 || input_sample_rate == output_sample_rate {
+        return samples.to_vec();
+    }
+
+    let output_len = ((samples.len() as u64 * output_sample_rate as u64) / input_sample_rate as u64)
+        .max(1) as usize;
+    let mut output = Vec::with_capacity(output_len);
+
+    for index in 0..output_len {
+        let position = index as f64 * input_sample_rate as f64 / output_sample_rate as f64;
+        let lower_index = position.floor() as usize;
+        let upper_index = (lower_index + 1).min(samples.len().saturating_sub(1));
+        let fraction = (position - lower_index as f64) as f32;
+        let lower = samples[lower_index];
+        let upper = samples[upper_index];
+        output.push(lower + ((upper - lower) * fraction));
+    }
+
+    output
+}
+
+fn transcribe_with_model(
+    model_path: &Path,
+    samples: &[f32],
+    language: &str,
+) -> Result<String, String> {
+    let context = load_whisper_context(model_path)?;
+    let mut state = context
+        .create_state()
+        .map_err(|error| format!("Unable to create the bundled whisper.cpp state: {error}"))?;
+    let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
+    params.set_language(Some(language));
+    params.set_translate(false);
+    params.set_no_context(true);
+    params.set_print_special(false);
+    params.set_print_progress(false);
+    params.set_print_realtime(false);
+    params.set_print_timestamps(false);
+
+    state.full(params, samples).map_err(|error| {
+        format!("The bundled whisper.cpp model failed to transcribe audio: {error}")
     })?;
 
-    if !output.status.success() {
-        return Err(helper_error_message(&output.stderr, &output.stdout));
+    let mut transcript = String::new();
+    for segment in state.as_iter() {
+        let text = segment.to_str_lossy().map_err(|error| {
+            format!("The bundled whisper.cpp segment text was invalid UTF-8: {error}")
+        })?;
+        transcript.push_str(text.as_ref());
     }
 
-    serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("The local transcription helper returned invalid JSON: {error}"))
+    Ok(transcript)
 }
 
-fn transcribe_with_persistent_helper(
-    state: &mut ModelRuntimeState,
-    runner: &HelperRunner,
-    audio_path: &Path,
-    model_dir: &Path,
-    language: &str,
-) -> Result<HelperTranscriptionResponse, String> {
-    if state.helper.is_none() {
-        state.helper = Some(LiveHelperProcess::spawn(runner)?);
-    }
-
-    let response = match state
-        .helper
-        .as_mut()
-        .expect("helper initialized")
-        .transcribe(audio_path, model_dir, language)
-    {
-        Ok(response) => Ok(response),
-        Err(PersistentHelperError::Message(error)) => {
-            Err(helper_error_message(error.as_bytes(), b""))
-        }
-        Err(PersistentHelperError::Restartable(_)) => {
-            state.helper.take();
-            state.helper = Some(LiveHelperProcess::spawn(runner)?);
-            state
-                .helper
-                .as_mut()
-                .expect("helper respawned")
-                .transcribe(audio_path, model_dir, language)
-                .map_err(|error| match error {
-                    PersistentHelperError::Restartable(message)
-                    | PersistentHelperError::Message(message) => {
-                        helper_error_message(message.as_bytes(), b"")
-                    }
-                })
-        }
-    }?;
-
-    Ok(response)
-}
-
-fn preload_with_persistent_helper(
-    state: &mut ModelRuntimeState,
-    runner: &HelperRunner,
-    model_dir: &Path,
-) -> Result<(), String> {
-    if state.helper.is_none() {
-        state.helper = Some(LiveHelperProcess::spawn(runner)?);
-    }
-
-    match state
-        .helper
-        .as_mut()
-        .expect("helper initialized")
-        .preload_model(model_dir)
-    {
-        Ok(()) => Ok(()),
-        Err(PersistentHelperError::Message(error)) => {
-            Err(helper_error_message(error.as_bytes(), b""))
-        }
-        Err(PersistentHelperError::Restartable(_)) => {
-            state.helper.take();
-            state.helper = Some(LiveHelperProcess::spawn(runner)?);
-            state
-                .helper
-                .as_mut()
-                .expect("helper respawned")
-                .preload_model(model_dir)
-                .map_err(|error| match error {
-                    PersistentHelperError::Restartable(message)
-                    | PersistentHelperError::Message(message) => {
-                        helper_error_message(message.as_bytes(), b"")
-                    }
-                })
-        }
-    }
+fn load_whisper_context(model_path: &Path) -> Result<WhisperContext, String> {
+    let model_path = model_path.to_string_lossy().into_owned();
+    WhisperContext::new_with_params(&model_path, WhisperContextParameters::default()).map_err(
+        |error| format!("Unable to load the bundled whisper.cpp model `{model_path}`: {error}"),
+    )
 }
 
 fn selected_provider() -> AsrProviderKind {
     match env::var("TATOR_INTERNAL_ASR_PROVIDER").ok().as_deref() {
-        Some("mlx_whisper") => AsrProviderKind::MlxWhisper,
+        Some("mlx_whisper") | Some("whisper_cpp") => AsrProviderKind::WhisperCpp,
         Some("mock") => AsrProviderKind::Mock,
         _ if cfg!(debug_assertions) => AsrProviderKind::Mock,
-        _ => AsrProviderKind::MlxWhisper,
+        _ => AsrProviderKind::WhisperCpp,
     }
 }
 
@@ -1260,381 +1012,83 @@ fn estimate_audio_duration_ms(audio_bytes: &[u8]) -> i64 {
 }
 
 fn model_directory(app_data_dir: &Path) -> PathBuf {
-    app_data_dir.join("models").join(MODEL_NAME)
+    app_data_dir.join("models").join(MODEL_INSTALL_DIR)
 }
 
 fn model_is_installed(app_data_dir: &Path) -> bool {
-    let model_dir = model_directory(app_data_dir);
-    if !model_dir.is_dir() {
-        return false;
-    }
-
-    model_dir.join("config.json").is_file()
-        && (model_dir.join("weights.safetensors").is_file()
-            || model_dir.join("weights.npz").is_file())
+    model_path(app_data_dir)
+        .metadata()
+        .map(|metadata| metadata.is_file() && metadata.len() > 0)
+        .unwrap_or(false)
 }
 
-fn ensure_model_installed(app_data_dir: &Path) -> Result<PathBuf, String> {
-    let model_dir = model_directory(app_data_dir);
-    if model_dir.is_dir()
-        && model_dir.join("config.json").is_file()
-        && (model_dir.join("weights.safetensors").is_file()
-            || model_dir.join("weights.npz").is_file())
-    {
-        return Ok(model_dir);
+fn model_is_available(app_data_dir: &Path, resource_dir: Option<&Path>) -> bool {
+    model_is_installed(app_data_dir) || bundled_model_source_path(resource_dir).is_some()
+}
+
+fn model_path(app_data_dir: &Path) -> PathBuf {
+    model_directory(app_data_dir).join(MODEL_FILE_NAME)
+}
+
+fn ensure_model_installed(
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+) -> Result<PathBuf, String> {
+    let installed_model = model_path(app_data_dir);
+    if model_is_installed(app_data_dir) {
+        return Ok(installed_model);
     }
 
+    let source_model = bundled_model_source_path(resource_dir).ok_or_else(|| {
+        "This build does not include the bundled whisper.cpp model. Rebuild with `npm run prepare:whisper-assets` before running the desktop app."
+            .to_string()
+    })?;
+
+    let model_dir = model_directory(app_data_dir);
     fs::create_dir_all(&model_dir)
         .map_err(|error| format!("Unable to create the model directory: {error}"))?;
-    write_embedded_asset(&model_dir.join("config.json"), MODEL_CONFIG_BYTES)?;
-    write_embedded_asset(&model_dir.join("weights.npz"), MODEL_WEIGHTS_BYTES)?;
-    write_embedded_asset(&model_dir.join("README.md"), MODEL_README_BYTES)?;
-
-    Ok(model_dir)
-}
-
-fn write_embedded_asset(path: &Path, bytes: &[u8]) -> Result<(), String> {
-    let should_write = match fs::metadata(path) {
-        Ok(metadata) => metadata.len() != bytes.len() as u64,
-        Err(_) => true,
-    };
-
-    if !should_write {
-        return Ok(());
-    }
-
-    fs::write(path, bytes).map_err(|error| {
+    fs::copy(&source_model, &installed_model).map_err(|error| {
         format!(
-            "Unable to write bundled model asset `{}`: {error}",
-            path.display()
-        )
-    })
-}
-
-fn ensure_helper_script(app_data_dir: &Path) -> Result<PathBuf, String> {
-    let runtime_dir = app_data_dir.join("runtime");
-    fs::create_dir_all(&runtime_dir)
-        .map_err(|error| format!("Unable to prepare the helper runtime directory: {error}"))?;
-    let script_path = runtime_dir.join("tator_mlx_helper.py");
-    fs::write(&script_path, HELPER_SCRIPT)
-        .map_err(|error| format!("Unable to write the local transcription helper: {error}"))?;
-    Ok(script_path)
-}
-
-fn resolve_helper_runner(
-    app_data_dir: &Path,
-    resource_dir: Option<&Path>,
-    helper_script: &Path,
-) -> Result<HelperRunner, String> {
-    if let Ok(executable) = env::var("TATOR_MLX_HELPER_EXECUTABLE") {
-        return Ok(HelperRunner {
-            program: executable,
-            base_args: Vec::new(),
-            env_vars: Vec::new(),
-            supports_persistent_process: false,
-        });
-    }
-
-    if let Ok(executable) = env::var("TATOR_PYTHON_EXECUTABLE") {
-        return Ok(HelperRunner {
-            program: executable,
-            base_args: vec![helper_script.to_string_lossy().into_owned()],
-            env_vars: Vec::new(),
-            supports_persistent_process: true,
-        });
-    }
-
-    let bundled_helper = app_data_dir
-        .join("runtime")
-        .join("bin")
-        .join("tator-mlx-helper");
-    if bundled_helper.exists() {
-        return Ok(HelperRunner {
-            program: bundled_helper.to_string_lossy().into_owned(),
-            base_args: Vec::new(),
-            env_vars: Vec::new(),
-            supports_persistent_process: false,
-        });
-    }
-
-    if let Some(runtime) = ensure_bundled_python_runtime(app_data_dir, resource_dir)? {
-        return Ok(HelperRunner {
-            program: runtime.executable.to_string_lossy().into_owned(),
-            base_args: vec![helper_script.to_string_lossy().into_owned()],
-            env_vars: vec![
-                (
-                    "PYTHONHOME".to_string(),
-                    runtime.python_home.to_string_lossy().into_owned(),
-                ),
-                (
-                    "PYTHONPATH".to_string(),
-                    runtime.site_packages.to_string_lossy().into_owned(),
-                ),
-                ("PYTHONDONTWRITEBYTECODE".to_string(), "1".to_string()),
-                ("PYTHONNOUSERSITE".to_string(), "1".to_string()),
-            ],
-            supports_persistent_process: true,
-        });
-    }
-
-    if let Some(dev_python) = resolve_dev_python() {
-        return Ok(HelperRunner {
-            program: dev_python.to_string_lossy().into_owned(),
-            base_args: vec![helper_script.to_string_lossy().into_owned()],
-            env_vars: Vec::new(),
-            supports_persistent_process: true,
-        });
-    }
-
-    Ok(HelperRunner {
-        program: "python3".to_string(),
-        base_args: vec![helper_script.to_string_lossy().into_owned()],
-        env_vars: Vec::new(),
-        supports_persistent_process: true,
-    })
-}
-
-fn helper_error_message(stderr: &[u8], stdout: &[u8]) -> String {
-    let stderr = String::from_utf8_lossy(stderr).trim().to_string();
-    let stdout = String::from_utf8_lossy(stdout).trim().to_string();
-    let combined = if !stderr.is_empty() {
-        stderr.clone()
-    } else {
-        stdout.clone()
-    };
-
-    if combined.contains("No module named 'mlx_whisper'")
-        || combined.contains("No module named \"mlx_whisper\"")
-    {
-        return "The Python runtime used for local transcription does not have `mlx_whisper` installed. Run `uv sync --project apps/mlx-runtime --extra dev`, then relaunch with `TATOR_PYTHON_EXECUTABLE=/absolute/path/to/apps/mlx-runtime/.venv/bin/python` if the app does not auto-detect that environment.".to_string();
-    }
-
-    if combined.contains("No module named 'huggingface_hub'")
-        || combined.contains("No module named \"huggingface_hub\"")
-    {
-        return "The Python runtime used for local transcription is missing `huggingface_hub`. Recreate the helper environment with `uv sync --project apps/mlx-runtime --extra dev`, then point `TATOR_PYTHON_EXECUTABLE` at `apps/mlx-runtime/.venv/bin/python`.".to_string();
-    }
-
-    if combined.contains("No module named 'numpy'")
-        || combined.contains("No module named \"numpy\"")
-    {
-        return "The local transcription helper fell back to a host Python that does not include the packaged runtime. Launch the built `Tator.app` bundle from `tauri build`, or rebuild so the app includes `Contents/Resources/runtime`.".to_string();
-    }
-
-    if combined.contains("No module named 'httpx'")
-        || combined.contains("No module named \"httpx\"")
-    {
-        return "The packaged MLX runtime is incomplete. Rebuild the desktop app so `Contents/Resources/runtime` includes the Hugging Face client dependencies required by `mlx_whisper`.".to_string();
-    }
-
-    if combined.contains("code signature invalid") || combined.contains("invalid Info.plist") {
-        return "The packaged Python runtime in this build has an invalid code signature, so macOS refused to load it. Reinstall Tator from a build that re-signs the bundled runtime. For debugging only, you can temporarily set `TATOR_PYTHON_EXECUTABLE` to a local Python 3.12 environment with `mlx_whisper` installed.".to_string();
-    }
-
-    if combined.contains("Library not loaded:")
-        && (combined.contains("Python.framework") || combined.contains("libpython3.12.dylib"))
-    {
-        return "The packaged Python runtime could not be relocated on this machine. Reinstall Tator from a build that includes the updated bundled runtime, or for debugging only temporarily set `TATOR_PYTHON_EXECUTABLE` to a local Python 3.12 environment with `mlx_whisper` installed.".to_string();
-    }
-
-    if combined.contains("signal: 9 (SIGKILL)") || combined.contains("killed: 9") {
-        return "macOS terminated the bundled transcription helper (SIGKILL). On GitHub release builds this usually means the copied MLX runtime is still quarantined or was blocked while launching. Move Tator into `/Applications`, reopen it from Finder once, or reinstall with a build that clears quarantine from the bundled runtime. As a manual workaround, run `xattr -dr com.apple.quarantine /path/to/Tator.app` or set `TATOR_PYTHON_EXECUTABLE` to a local Python 3.12 environment with `mlx_whisper` installed.".to_string();
-    }
-
-    if !stderr.is_empty() {
-        stderr
-    } else if !stdout.is_empty() {
-        stdout
-    } else {
-        "The local transcription helper failed without an error message.".to_string()
-    }
-}
-
-fn should_tolerate_prewarm_failure(error: &str) -> bool {
-    error.contains("signal: 9 (SIGKILL)") || error.contains("killed: 9")
-}
-
-fn helper_runtime_availability_error(
-    app_data_dir: &Path,
-    resource_dir: Option<&Path>,
-) -> Option<String> {
-    if env::var("TATOR_MLX_HELPER_EXECUTABLE").is_ok()
-        || env::var("TATOR_PYTHON_EXECUTABLE").is_ok()
-    {
-        return None;
-    }
-
-    let bundled_helper = app_data_dir
-        .join("runtime")
-        .join("bin")
-        .join("tator-mlx-helper");
-    if bundled_helper.exists() {
-        return None;
-    }
-
-    if bundled_runtime_is_installed(app_data_dir) {
-        return None;
-    }
-
-    if resource_dir
-        .map(resource_runtime_dir)
-        .is_some_and(|path| bundled_runtime_source_ready(&path))
-    {
-        return None;
-    }
-
-    if resolve_dev_python().is_some() {
-        return None;
-    }
-
-    Some(
-        "This build does not include the packaged MLX runtime. Launch the built `Tator.app` bundle from `tauri build`, or rebuild with `npm run prepare:mlx-runtime` before `tauri build`. As a fallback, set `TATOR_PYTHON_EXECUTABLE` to a Python 3.12 environment that has `mlx_whisper` installed.".to_string(),
-    )
-}
-
-fn resolve_dev_python() -> Option<PathBuf> {
-    [
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../mlx-runtime/.venv/bin/python"),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../api/.venv/bin/python"),
-    ]
-    .into_iter()
-    .find(|candidate| candidate.exists())
-}
-
-fn ensure_bundled_python_runtime(
-    app_data_dir: &Path,
-    resource_dir: Option<&Path>,
-) -> Result<Option<BundledPythonRuntime>, String> {
-    let install_dir = bundled_runtime_install_dir(app_data_dir);
-    let source_dir = resource_dir
-        .map(resource_runtime_dir)
-        .filter(|path| bundled_runtime_source_ready(path));
-
-    if bundled_runtime_target_ready(&install_dir)
-        && !source_dir
-            .as_ref()
-            .is_some_and(|source| bundled_runtime_manifest_changed(&install_dir, source))
-    {
-        clear_quarantine_attributes(&install_dir);
-        return Ok(Some(bundled_runtime_from_install_dir(install_dir)));
-    }
-
-    let Some(source_dir) = source_dir else {
-        return Ok(None);
-    };
-
-    if install_dir.exists() {
-        fs::remove_dir_all(&install_dir).map_err(|error| {
-            format!(
-                "Unable to replace the packaged MLX runtime at `{}`: {error}",
-                install_dir.display()
-            )
-        })?;
-    }
-
-    copy_directory_recursive(&source_dir, &install_dir)?;
-    ensure_executable(
-        &install_dir
-            .join("python-home")
-            .join("bin")
-            .join("python3.12"),
-    )?;
-    clear_quarantine_attributes(&install_dir);
-
-    Ok(Some(bundled_runtime_from_install_dir(install_dir)))
-}
-
-fn resource_runtime_dir(resource_dir: &Path) -> PathBuf {
-    resource_dir.join("runtime")
-}
-
-fn bundled_runtime_install_dir(app_data_dir: &Path) -> PathBuf {
-    app_data_dir.join("runtime").join("bundled-python")
-}
-
-fn bundled_runtime_manifest_path(root: &Path) -> PathBuf {
-    root.join("manifest.json")
-}
-
-fn bundled_runtime_source_ready(root: &Path) -> bool {
-    bundled_runtime_manifest_path(root).is_file()
-        && root
-            .join("python-home")
-            .join("bin")
-            .join("python3.12")
-            .is_file()
-        && root.join("site-packages").join("mlx_whisper").is_dir()
-}
-
-fn bundled_runtime_target_ready(root: &Path) -> bool {
-    bundled_runtime_source_ready(root)
-}
-
-fn bundled_runtime_is_installed(app_data_dir: &Path) -> bool {
-    bundled_runtime_target_ready(&bundled_runtime_install_dir(app_data_dir))
-}
-
-fn bundled_runtime_from_install_dir(root: PathBuf) -> BundledPythonRuntime {
-    BundledPythonRuntime {
-        executable: root.join("python-home").join("bin").join("python3.12"),
-        python_home: root.join("python-home"),
-        site_packages: root.join("site-packages"),
-    }
-}
-
-fn bundled_runtime_manifest_changed(installed_root: &Path, source_root: &Path) -> bool {
-    fs::read(bundled_runtime_manifest_path(installed_root)).ok()
-        != fs::read(bundled_runtime_manifest_path(source_root)).ok()
-}
-
-fn copy_directory_recursive(source: &Path, destination: &Path) -> Result<(), String> {
-    fs::create_dir_all(destination).map_err(|error| {
-        format!(
-            "Unable to create runtime directory `{}`: {error}",
-            destination.display()
+            "Unable to copy the bundled whisper.cpp model from `{}` to `{}`: {error}",
+            source_model.display(),
+            installed_model.display()
         )
     })?;
 
-    for entry in fs::read_dir(source).map_err(|error| {
-        format!(
-            "Unable to read bundled runtime directory `{}`: {error}",
-            source.display()
+    Ok(installed_model)
+}
+
+fn bundled_model_source_path(resource_dir: Option<&Path>) -> Option<PathBuf> {
+    resource_dir
+        .map(resource_model_path)
+        .filter(|path| path.is_file())
+        .or_else(resolve_dev_bundled_model)
+}
+
+fn bundled_model_availability_error(
+    app_data_dir: &Path,
+    resource_dir: Option<&Path>,
+) -> Option<String> {
+    if model_is_available(app_data_dir, resource_dir) {
+        None
+    } else {
+        Some(
+            "This build does not include the bundled whisper.cpp model. Run `npm run prepare:whisper-assets` before `tauri dev` or `tauri build` so the model is packaged into the desktop app.".to_string(),
         )
-    })? {
-        let entry = entry.map_err(|error| error.to_string())?;
-        let file_type = entry.file_type().map_err(|error| error.to_string())?;
-        let source_path = entry.path();
-        let destination_path = destination.join(entry.file_name());
-
-        if file_type.is_dir() {
-            copy_directory_recursive(&source_path, &destination_path)?;
-        } else {
-            fs::copy(&source_path, &destination_path).map_err(|error| {
-                format!(
-                    "Unable to copy bundled runtime asset `{}`: {error}",
-                    source_path.display()
-                )
-            })?;
-        }
     }
-
-    Ok(())
 }
 
-fn ensure_executable(path: &Path) -> Result<(), String> {
-    let mut permissions = fs::metadata(path)
-        .map_err(|error| format!("Unable to inspect `{}`: {error}", path.display()))?
-        .permissions();
-    permissions.set_mode(0o755);
-    fs::set_permissions(path, permissions)
-        .map_err(|error| format!("Unable to mark `{}` as executable: {error}", path.display()))
+fn resource_model_path(resource_dir: &Path) -> PathBuf {
+    resource_dir.join(MODEL_ASSET_DIR).join(MODEL_FILE_NAME)
 }
 
-fn clear_quarantine_attributes(root: &Path) {
-    let _ = Command::new("xattr")
-        .args(["-dr", "com.apple.quarantine"])
-        .arg(root)
-        .status();
+fn resolve_dev_bundled_model() -> Option<PathBuf> {
+    [PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("target")
+        .join("bundled-whisper-model")
+        .join(MODEL_FILE_NAME)]
+    .into_iter()
+    .find(|candidate| candidate.exists())
 }
 
 #[cfg(test)]
@@ -1885,96 +1339,74 @@ mod tests {
     }
 
     #[test]
-    fn helper_error_message_maps_missing_mlx_whisper_to_setup_instructions() {
-        let message =
-            helper_error_message(b"ModuleNotFoundError: No module named 'mlx_whisper'", b"");
-        assert!(message.contains("does not have `mlx_whisper` installed"));
-        assert!(message.contains("uv sync --project apps/mlx-runtime --extra dev"));
-        assert!(message.contains("TATOR_PYTHON_EXECUTABLE"));
+    fn selected_provider_accepts_whisper_cpp_and_legacy_mlx_names() {
+        env::set_var("TATOR_INTERNAL_ASR_PROVIDER", "whisper_cpp");
+        assert_eq!(selected_provider(), AsrProviderKind::WhisperCpp);
+
+        env::set_var("TATOR_INTERNAL_ASR_PROVIDER", "mlx_whisper");
+        assert_eq!(selected_provider(), AsrProviderKind::WhisperCpp);
+
+        env::remove_var("TATOR_INTERNAL_ASR_PROVIDER");
     }
 
     #[test]
-    fn helper_error_message_maps_missing_numpy_to_bundle_guidance() {
-        let message = helper_error_message(b"ModuleNotFoundError: No module named 'numpy'", b"");
-        assert!(message.contains("host Python"));
-        assert!(message.contains("Tator.app"));
+    fn bundled_model_availability_error_reports_missing_model_assets() {
+        let app_data_dir = Path::new("/tmp/tator-missing-model-app-data");
+        let message = bundled_model_availability_error(app_data_dir, None);
+
+        if resolve_dev_bundled_model().is_some() {
+            assert!(message.is_none());
+        } else {
+            let message = message.unwrap();
+            assert!(message.contains("bundled whisper.cpp model"));
+            assert!(message.contains("prepare:whisper-assets"));
+        }
     }
 
     #[test]
-    fn helper_error_message_maps_missing_httpx_to_incomplete_runtime_guidance() {
-        let message = helper_error_message(b"ModuleNotFoundError: No module named 'httpx'", b"");
-        assert!(message.contains("runtime is incomplete"));
-        assert!(message.contains("Contents/Resources/runtime"));
-    }
+    fn bundled_model_source_path_prefers_packaged_resources() {
+        use uuid::Uuid;
 
-    #[test]
-    fn helper_error_message_maps_code_signature_invalid_to_bundle_signing_guidance() {
-        let message = helper_error_message(
-            b"dyld: Library not loaded: @executable_path/../lib/libpython3.12.dylib\nReason: tried: '/tmp/libpython3.12.dylib' (code signature invalid in '/tmp/libpython3.12.dylib')",
-            b"",
-        );
-        assert!(message.contains("invalid code signature"));
-        assert!(message.contains("re-signs the bundled runtime"));
-        assert!(message.contains("For debugging only"));
-    }
-
-    #[test]
-    fn helper_error_message_maps_dyld_python_failures_to_reinstall_guidance() {
-        let message = helper_error_message(
-            b"dyld: Library not loaded: /Library/Frameworks/Python.framework/Versions/3.12/Python",
-            b"",
-        );
-        assert!(message.contains("packaged Python runtime could not be relocated"));
-        assert!(message.contains("TATOR_PYTHON_EXECUTABLE"));
-    }
-
-    #[test]
-    fn helper_error_message_maps_sigkill_to_quarantine_guidance() {
-        let message = helper_error_message(
-            b"The local transcription helper exited unexpectedly with status signal: 9 (SIGKILL).",
-            b"",
-        );
-        assert!(message.contains("copied MLX runtime is still quarantined"));
-        assert!(message.contains("xattr -dr com.apple.quarantine"));
-    }
-
-    #[test]
-    fn prewarm_tolerates_sigkill_failures() {
-        assert!(should_tolerate_prewarm_failure(
-            "The local transcription helper exited unexpectedly with status signal: 9 (SIGKILL).",
-        ));
-        assert!(!should_tolerate_prewarm_failure(
-            "ModuleNotFoundError: No module named 'mlx_whisper'",
-        ));
-    }
-
-    #[test]
-    fn resolve_helper_runner_prefers_tator_python_executable_over_bundled_runtime() {
-        let root = env::temp_dir().join(format!("tator-helper-runner-{}", Uuid::new_v4()));
-        let app_data_dir = root.join("app-data");
+        let root = env::temp_dir().join(format!("tator-whisper-model-{}", Uuid::new_v4()));
         let resource_dir = root.join("resources");
-        let runtime_root = resource_dir.join("runtime");
-        let debug_python = root.join("debug-python");
+        let bundled_dir = resource_dir.join(MODEL_ASSET_DIR);
+        std::fs::create_dir_all(&bundled_dir).unwrap();
+        std::fs::write(bundled_dir.join(MODEL_FILE_NAME), b"tiny model").unwrap();
 
-        std::fs::create_dir_all(runtime_root.join("python-home").join("bin")).unwrap();
-        std::fs::create_dir_all(runtime_root.join("site-packages").join("mlx_whisper")).unwrap();
-        std::fs::write(runtime_root.join("manifest.json"), "{}").unwrap();
-        std::fs::write(runtime_root.join("python-home").join("bin").join("python3.12"), "").unwrap();
-        std::fs::write(&debug_python, "").unwrap();
-
-        env::set_var("TATOR_PYTHON_EXECUTABLE", &debug_python);
-        let runner = resolve_helper_runner(
-            &app_data_dir,
-            Some(&resource_dir),
-            Path::new("/tmp/tator-helper.py"),
-        )
-        .unwrap();
-        env::remove_var("TATOR_PYTHON_EXECUTABLE");
-
+        let source_path = bundled_model_source_path(Some(&resource_dir)).unwrap();
         let _ = std::fs::remove_dir_all(&root);
 
-        assert_eq!(runner.program, debug_python.to_string_lossy());
-        assert_eq!(runner.base_args, vec!["/tmp/tator-helper.py".to_string()]);
-        assert!(runner.supports_persistent_process);
+        assert!(source_path.ends_with(MODEL_FILE_NAME));
+        assert!(source_path.to_string_lossy().contains(MODEL_ASSET_DIR));
+    }
+
+    #[test]
+    fn resample_audio_downsamples_to_target_rate() {
+        let samples = vec![0.0_f32, 0.5, -0.5, 1.0];
+        let resampled = resample_audio(&samples, 32_000, 16_000);
+        assert_eq!(resampled.len(), 2);
+        assert_eq!(resampled[0], 0.0);
+    }
+
+    #[test]
+    fn decode_audio_for_whisper_downmixes_and_resamples() {
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let spec = hound::WavSpec {
+                channels: 2,
+                sample_rate: 32_000,
+                bits_per_sample: 16,
+                sample_format: hound::SampleFormat::Int,
+            };
+            let mut writer = hound::WavWriter::new(&mut cursor, spec).unwrap();
+            for sample in [0_i16, 1000, -1000, 2000, 0, 500, -500, 1000] {
+                writer.write_sample(sample).unwrap();
+            }
+            writer.finalize().unwrap();
+        }
+
+        let samples = decode_audio_for_whisper(&cursor.into_inner()).unwrap();
+        assert_eq!(samples.len(), 2);
+        assert!(samples.iter().all(|sample| (-1.0..=1.0).contains(sample)));
     }
 }

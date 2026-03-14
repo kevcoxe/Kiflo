@@ -55,8 +55,13 @@ export type WorkflowStatus =
   | "success"
   | "error";
 
+const DEFAULT_HOTKEY =
+  typeof navigator !== "undefined" && navigator.userAgent.toLowerCase().includes("windows")
+    ? "Alt+Space"
+    : "Option+Space";
+
 const DEFAULT_SETTINGS: Settings = {
-  hotkey: "Option+Space",
+  hotkey: DEFAULT_HOTKEY,
   autoPaste: true,
   autoBacktrack: false,
   spokenPressEnterCommand: false,
@@ -98,7 +103,7 @@ const DEFAULT_HISTORY_METRICS: HistoryMetrics = {
 
 const HUD_ERROR_FLASH_MS = 450;
 const PERMISSION_REQUIRED_MESSAGE =
-  "Grant microphone and accessibility permissions before recording.";
+  "Grant the required permissions before recording.";
 const SPOKEN_PRESS_ENTER_PATTERN =
   /(?:^|[\s,.;:!?'"()[\]-]+)press enter[\s,.;:!?'"()[\]-]*$/i;
 

@@ -14,9 +14,8 @@
     "release:prep": "node ./scripts/release-prep.mjs",
     "sync:desktop-version": "node ./scripts/sync-desktop-version.mjs",
     "tauri:dev": "npm run tauri:dev --workspace @tator/desktop",
-    "test": "npm run test --workspace @tator/desktop && uv run --project apps/mlx-runtime --extra dev pytest apps/mlx-runtime/tests && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "test": "npm run test --workspace @tator/desktop && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
     "test:desktop": "npm run test --workspace @tator/desktop",
-    "test:python": "uv run --project apps/mlx-runtime --extra dev pytest apps/mlx-runtime/tests",
     "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
   }
 }

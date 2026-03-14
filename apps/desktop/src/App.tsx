@@ -194,7 +194,7 @@ export default function App() {
         </div>
         {permissionsCollapsed ? (
           <p className="muted permissions-summary">
-            Microphone and accessibility access are granted.
+            Required permissions are granted.
           </p>
         ) : (
           <div id="permissions-panel-body">
@@ -213,8 +213,8 @@ export default function App() {
                 <div className="permissions-copy">
                   <strong>Permissions required to continue</strong>
                   <p>
-                    Grant microphone and accessibility access before using dictation.
-                    Open the relevant macOS privacy panes, then refresh once access has
+                    Grant the required system permissions before using dictation.
+                    Open the relevant system settings pages, then refresh once access has
                     been granted.
                   </p>
                 </div>

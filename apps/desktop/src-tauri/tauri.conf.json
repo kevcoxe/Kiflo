@@ -4,8 +4,8 @@
   "version": "0.2.0",
   "identifier": "dev.kevcoxe.tator",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run prepare:mlx-runtime && npm run build",
+    "beforeDevCommand": "npm run prepare:whisper-assets && npm run dev",
+    "beforeBuildCommand": "npm run prepare:whisper-assets && npm run build",
     "devUrl": "http://127.0.0.1:1420",
     "frontendDist": "../dist"
   },
@@ -29,7 +29,7 @@
   "bundle": {
     "active": true,
     "resources": {
-      "target/bundled-runtime/": "runtime/"
+      "target/bundled-whisper-model/": "whisper/"
     },
     "icon": [
       "icons/32x32.png",
