@@ -2,7 +2,10 @@
   {
     "id": "base_en",
     "fileName": "ggml-base.en.bin",
-    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin?download=1",
+    "urls": [
+      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin?download=1",
+      "https://github.com/kevcoxe/tator/releases/latest/download/ggml-base.en.bin"
+    ],
     "sha1": "137c40403d78fd54d454da0f9bd998f78703390c",
     "sizeBytes": 147964211,
     "bundled": true
@@ -10,7 +13,10 @@
   {
     "id": "small_en",
     "fileName": "ggml-small.en.bin",
-    "url": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin?download=1",
+    "urls": [
+      "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin?download=1",
+      "https://github.com/kevcoxe/tator/releases/latest/download/ggml-small.en.bin"
+    ],
     "sha1": "db8a495a91d927739e50b3fc1cc4c6b8f6c2d022",
     "sizeBytes": 487614201,
     "bundled": false

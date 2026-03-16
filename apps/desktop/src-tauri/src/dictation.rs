@@ -1119,8 +1119,49 @@ fn download_model_to_install(
     let client = Client::builder()
         .build()
         .map_err(|error| format!("Unable to prepare the whisper.cpp downloader: {error}"))?;
+    let mut failures = Vec::new();
+
+    for url in model_download_urls(spec) {
+        match download_model_from_url(&client, app_data_dir, spec, &url) {
+            Ok(path) => return Ok(path),
+            Err(error) => failures.push(format!("{url}: {error}")),
+        }
+    }
+
+    Err(format!(
+        "Unable to download the optional whisper.cpp model `{}` from any configured source. {}",
+        spec.file_name,
+        failures.join(" | ")
+    ))
+}
+
+fn model_download_urls(spec: &WhisperModelSpec) -> Vec<String> {
+    let mut urls = Vec::new();
+
+    if let Ok(base_url) = env::var("TATOR_WHISPER_MODEL_MIRROR_BASE_URL") {
+        let trimmed = base_url.trim().trim_end_matches('/');
+        if !trimmed.is_empty() {
+            urls.push(format!("{trimmed}/{}", spec.file_name));
+        }
+    }
+
+    for url in &spec.urls {
+        if !urls.iter().any(|candidate| candidate == url) {
+            urls.push(url.clone());
+        }
+    }
+
+    urls
+}
+
+fn download_model_from_url(
+    client: &Client,
+    app_data_dir: &Path,
+    spec: &WhisperModelSpec,
+    url: &str,
+) -> Result<PathBuf, String> {
     let response = client
-        .get(&spec.url)
+        .get(url)
         .send()
         .map_err(|error| {
             format!(
@@ -1728,6 +1769,26 @@ mod tests {
         assert!(!installed_dir.join(&spec.file_name).exists());
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn model_download_urls_prefers_custom_mirror_then_catalog_sources() {
+        env::set_var("TATOR_WHISPER_MODEL_MIRROR_BASE_URL", "https://mirror.example/models/");
+
+        let urls = model_download_urls(find_model(SpeechModel::SmallEn));
+
+        env::remove_var("TATOR_WHISPER_MODEL_MIRROR_BASE_URL");
+
+        assert_eq!(
+            urls,
+            vec![
+                "https://mirror.example/models/ggml-small.en.bin".to_string(),
+                "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin?download=1"
+                    .to_string(),
+                "https://github.com/kevcoxe/tator/releases/latest/download/ggml-small.en.bin"
+                    .to_string(),
+            ]
+        );
     }
 
     #[test]

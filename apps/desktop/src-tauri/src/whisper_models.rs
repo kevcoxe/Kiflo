@@ -9,7 +9,7 @@ use crate::models::SpeechModel;
 pub struct WhisperModelSpec {
     pub id: SpeechModel,
     pub file_name: String,
-    pub url: String,
+    pub urls: Vec<String>,
     pub sha1: String,
     pub size_bytes: u64,
     pub bundled: bool,

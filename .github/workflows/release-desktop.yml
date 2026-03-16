@@ -126,3 +126,87 @@ jobs:
           releaseBody: ${{ steps.release_notes.outputs.body }}
           releaseDraft: false
           prerelease: ${{ contains(github.ref_name, '-') }}
+
+  mirror-whisper-models:
+    needs: release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 23
+
+      - name: Download whisper model mirror assets
+        run: |
+          node <<'EOF'
+          const fs = require("node:fs");
+          const path = require("node:path");
+          const crypto = require("node:crypto");
+          const { Readable } = require("node:stream");
+          const { pipeline } = require("node:stream/promises");
+
+          const catalog = JSON.parse(fs.readFileSync("apps/desktop/src-tauri/resources/whisper-models.json", "utf8"));
+          const outputDir = path.resolve("dist", "whisper-models");
+          fs.mkdirSync(outputDir, { recursive: true });
+
+          async function sha1ForFile(filePath) {
+            return await new Promise((resolve, reject) => {
+              const hash = crypto.createHash("sha1");
+              const stream = fs.createReadStream(filePath);
+              stream.on("error", reject);
+              stream.on("data", (chunk) => hash.update(chunk));
+              stream.on("end", () => resolve(hash.digest("hex")));
+            });
+          }
+
+          async function downloadModel(spec) {
+            const destination = path.join(outputDir, spec.fileName);
+            const tempPath = `${destination}.download`;
+            fs.rmSync(tempPath, { force: true });
+
+            const errors = [];
+            for (const url of spec.urls) {
+              try {
+                const response = await fetch(url);
+                if (!response.ok || !response.body) {
+                  throw new Error(`${response.status} ${response.statusText}`);
+                }
+
+                await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(tempPath));
+
+                const digest = await sha1ForFile(tempPath);
+                if (digest !== spec.sha1) {
+                  throw new Error(`SHA1 mismatch: expected ${spec.sha1}, got ${digest}`);
+                }
+
+                fs.renameSync(tempPath, destination);
+                return;
+              } catch (error) {
+                fs.rmSync(tempPath, { force: true });
+                errors.push(`${url}: ${error instanceof Error ? error.message : String(error)}`);
+              }
+            }
+
+            throw new Error(`Unable to mirror ${spec.fileName}. ${errors.join(" | ")}`);
+          }
+
+          (async () => {
+            for (const spec of catalog) {
+              await downloadModel(spec);
+            }
+          })().catch((error) => {
+            console.error(error instanceof Error ? error.message : String(error));
+            process.exit(1);
+          });
+          EOF
+
+      - name: Upload whisper model mirror assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.ref_name }}" dist/whisper-models/* --clobber

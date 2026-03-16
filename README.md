@@ -22,6 +22,8 @@ Tator is a desktop dictation app built as a Tauri app with local transcription a
 
 The app now uses a bundled native `whisper.cpp` backend through Rust bindings. `tauri dev` and `tauri build` automatically run `npm run prepare:whisper-assets`, which downloads the official `ggml-base.en.bin` model and bundles it into the desktop app. Users can optionally download the larger `ggml-small.en.bin` model from Settings for higher transcription quality.
 
+Model downloads try multiple sources in order: Hugging Face first, then the repo's GitHub Releases assets as a fallback. If you need to point builds or app downloads at your own mirror, set `TATOR_WHISPER_MODEL_MIRROR_BASE_URL` to a directory that serves the `ggml-*.bin` files.
+
 The shipped desktop app does not talk to a separate HTTP API. Transcription and cleanup run through native Tauri commands.
 
 ## Verification
@@ -42,7 +44,7 @@ To cut a release:
 3. Commit the changelog and any related release changes.
 4. Push a version tag that starts with `v`, for example `v0.3.0`.
 5. GitHub Actions will sync the desktop app version from that tag, read the matching section from
-   `CHANGELOG.md`, and attach the macOS, Windows, and Linux Tauri bundles to a GitHub Release for that tag.
+   `CHANGELOG.md`, and attach the macOS, Windows, and Linux Tauri bundles plus the mirrored whisper model files to a GitHub Release for that tag.
 
 The workflow publishes unsigned macOS and Windows artifacts by default. If you need signed or
 notarized releases, add the relevant platform credentials as GitHub Actions secrets and extend the
