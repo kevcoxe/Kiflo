@@ -52,6 +52,13 @@ export default function App() {
     }
   }, [permissionsReady]);
 
+  useEffect(() => {
+    const html = document.documentElement;
+    html.classList.remove("theme-light", "theme-dark");
+    if (controller.settings.theme === "light") html.classList.add("theme-light");
+    else if (controller.settings.theme === "dark") html.classList.add("theme-dark");
+  }, [controller.settings.theme]);
+
   function handlePressStart(event: PointerEvent<HTMLButtonElement>) {
     if (!isHoldMode) {
       return;
