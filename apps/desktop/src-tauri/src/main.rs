@@ -13,9 +13,9 @@ use std::{env, fs, path::PathBuf, sync::Mutex, thread};
 
 use hud::{create_hud_window, hide_hud, set_hud_phase, show_hud};
 use models::{
-    CleanupResponse, ClipboardSnapshot, DictationMode, HistoryMetrics, HistoryRecord, HudPhase,
-    HudState, ModelStatus, NewHistoryRecord, PermissionStatus, RecordedAudio, Settings,
-    SpeechModel, TranscriptionResponse,
+    CleanupResponse, ClipboardSnapshot, DictationMode, FocusedEditorContext, HistoryMetrics,
+    HistoryRecord, HudPhase, HudState, ModelStatus, NewHistoryRecord, PermissionStatus,
+    RecordedAudio, Settings, SpeechModel, TranscriptionResponse,
 };
 use tauri::{
     image::Image,
@@ -232,6 +232,11 @@ fn get_frontmost_app() -> Result<Option<String>, String> {
 }
 
 #[tauri::command]
+fn get_focused_editor_context() -> Result<FocusedEditorContext, String> {
+    permissions::focused_editor_context()
+}
+
+#[tauri::command]
 fn capture_clipboard() -> Result<ClipboardSnapshot, String> {
     permissions::capture_clipboard()
 }
@@ -254,6 +259,16 @@ fn simulate_paste() -> Result<(), String> {
 #[tauri::command]
 fn simulate_enter() -> Result<(), String> {
     permissions::simulate_enter()
+}
+
+#[tauri::command]
+fn simulate_tab() -> Result<(), String> {
+    permissions::simulate_tab()
+}
+
+#[tauri::command]
+fn simulate_text_input(text: String) -> Result<(), String> {
+    permissions::simulate_text_input(text)
 }
 
 #[tauri::command]
@@ -897,11 +912,14 @@ fn main() {
             request_microphone_access,
             request_accessibility_access,
             get_frontmost_app,
+            get_focused_editor_context,
             capture_clipboard,
             set_clipboard_text,
             restore_clipboard,
             simulate_paste,
             simulate_enter,
+            simulate_tab,
+            simulate_text_input,
             quit_app,
             get_hud_state,
             show_hud_command,

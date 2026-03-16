@@ -42,6 +42,8 @@ export interface Settings {
   hotkey: string;
   autoPaste: boolean;
   autoBacktrack: boolean;
+  editorFileMentionsEnabled: boolean;
+  forceEditorComposer: boolean;
   spokenPressEnterCommand: boolean;
   pauseBackgroundAudio: boolean;
   warmModelOnLaunch: boolean;
@@ -101,7 +103,26 @@ export interface TranscriptionResponse {
 
 export interface CleanupResponse {
   clean_text: string;
+  insertion_plan?: CleanupInsertionSegment[];
   provider: string;
+}
+
+export type CleanupInsertionSegment =
+  | {
+      kind: "text";
+      text: string;
+    }
+  | {
+      kind: "file_mention";
+      query: string;
+      fallbackText: string;
+    };
+
+export interface FocusedEditorContext {
+  appName: string | null;
+  isSupportedEditor: boolean;
+  isComposer: boolean;
+  confidence: number;
 }
 
 export interface ModelStatus {

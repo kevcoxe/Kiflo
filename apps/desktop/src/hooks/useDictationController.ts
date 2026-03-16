@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import type {
+  CleanupInsertionSegment,
   DictationMode,
+  FocusedEditorContext,
   HistoryMetrics,
   HistoryRecord,
   ModelStatus,
@@ -14,6 +16,7 @@ import {
   cleanupText,
   createHistoryRecord,
   downloadModel,
+  getFocusedEditorContext,
   getFrontmostApp,
   getHistoryMetrics,
   getModelStatus,
@@ -36,6 +39,8 @@ import {
   showHud,
   simulateEnter,
   simulatePaste,
+  simulateTab,
+  simulateTextInput,
   startRecording,
   stopRecording,
   transcribeAudio,
@@ -65,6 +70,8 @@ const DEFAULT_SETTINGS: Settings = {
   hotkey: DEFAULT_HOTKEY,
   autoPaste: true,
   autoBacktrack: false,
+  editorFileMentionsEnabled: false,
+  forceEditorComposer: false,
   spokenPressEnterCommand: false,
   pauseBackgroundAudio: true,
   warmModelOnLaunch: true,
@@ -105,6 +112,13 @@ const DEFAULT_HISTORY_METRICS: HistoryMetrics = {
   averageWordsPerSession: 0,
   topWords: [],
   topMeaningfulWords: [],
+};
+
+const DEFAULT_FOCUSED_EDITOR_CONTEXT: FocusedEditorContext = {
+  appName: null,
+  isSupportedEditor: false,
+  isComposer: false,
+  confidence: 0,
 };
 
 const HUD_ERROR_FLASH_MS = 450;
@@ -167,6 +181,38 @@ async function pasteText(text: string, restoreOriginalClipboard: boolean) {
 
 async function pressEnterKey() {
   await simulateEnter();
+}
+
+async function pressTabKey() {
+  await simulateTab();
+}
+
+async function typeText(text: string) {
+  if (!text) {
+    return;
+  }
+
+  await simulateTextInput(text);
+}
+
+function cleanupPlanHasFileMentions(plan: CleanupInsertionSegment[] | undefined): boolean {
+  return Boolean(plan?.some((segment) => segment.kind === "file_mention"));
+}
+
+async function insertCleanupPlan(plan: CleanupInsertionSegment[]) {
+  for (const segment of plan) {
+    if (segment.kind === "text") {
+      await typeText(segment.text);
+      continue;
+    }
+
+    await typeText("@");
+    await pause(100);
+    await typeText(segment.query);
+    await pause(100);
+    await pressTabKey();
+    await pause(80);
+  }
 }
 
 function extractSpokenPressEnterCommand(
@@ -497,7 +543,11 @@ export function useDictationController() {
       const activeState = stateRef.current;
       const audio = await stopRecording();
       void playRecordingStopCue(activeState.settings.recordingCueVolume);
-      const appName = await getFrontmostApp();
+      const focusedEditorContext = await getFocusedEditorContext().catch(
+        () => DEFAULT_FOCUSED_EDITOR_CONTEXT,
+      );
+      const appName =
+        focusedEditorContext.appName ?? (await getFrontmostApp().catch(() => null));
       const transcription = await transcribeAudio(
         audio.audioBase64,
         activeState.mode,
@@ -514,6 +564,14 @@ export function useDictationController() {
       );
       const rawText = outputDirective.text.trim();
       const cleanText = cleanup.clean_text.trim();
+      const shouldTreatAsComposer =
+        focusedEditorContext.isSupportedEditor &&
+        (focusedEditorContext.isComposer ||
+          activeState.settings.forceEditorComposer);
+      const shouldUseMentionInsertion =
+        activeState.settings.editorFileMentionsEnabled &&
+        shouldTreatAsComposer &&
+        cleanupPlanHasFileMentions(cleanup.insertion_plan);
       if (!rawText && !outputDirective.shouldPressEnter) {
         throw new Error(
           "No speech was detected in the recording. Try speaking louder or checking the selected microphone.",
@@ -530,7 +588,11 @@ export function useDictationController() {
 
       if (activeState.settings.autoPaste && cleanText) {
         try {
-          await pasteText(cleanText, activeState.settings.restoreClipboard);
+          if (shouldUseMentionInsertion && cleanup.insertion_plan) {
+            await insertCleanupPlan(cleanup.insertion_plan);
+          } else {
+            await pasteText(cleanText, activeState.settings.restoreClipboard);
+          }
         } catch (pasteError) {
           historyStatus = "fallback";
           processingSucceeded = false;
@@ -540,7 +602,7 @@ export function useDictationController() {
           setError(
             describeError(
               pasteError,
-              "Paste failed. Use the fallback panel instead.",
+              "Insertion failed. Use the fallback panel instead.",
             ),
           );
         }

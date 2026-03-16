@@ -277,6 +277,34 @@ export function SettingsPanel({
       </label>
       <label className="toggle">
         <input
+          checked={settings.editorFileMentionsEnabled}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("editorFileMentionsEnabled", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Enable editor file mentions</span>
+      </label>
+      <p className="field-help muted">
+        In supported editor chat boxes, convert spoken file names into @mentions and
+        confirm them with Tab.
+      </p>
+      <label className="toggle">
+        <input
+          checked={settings.forceEditorComposer}
+          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+            update("forceEditorComposer", event.target.checked)
+          }
+          type="checkbox"
+        />
+        <span>Force supported editors to behave like composer fields</span>
+      </label>
+      <p className="field-help muted">
+        Use @mentions and Tab even when Tator cannot confirm the focused field is a
+        chat/composer input.
+      </p>
+      <label className="toggle">
+        <input
           checked={settings.spokenPressEnterCommand}
           onChange={(event: ChangeEvent<HTMLInputElement>) =>
             update("spokenPressEnterCommand", event.target.checked)

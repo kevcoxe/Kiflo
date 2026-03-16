@@ -35,6 +35,8 @@ pub struct Settings {
     pub hotkey: String,
     pub auto_paste: bool,
     pub auto_backtrack: bool,
+    pub editor_file_mentions_enabled: bool,
+    pub force_editor_composer: bool,
     pub spoken_press_enter_command: bool,
     pub pause_background_audio: bool,
     pub warm_model_on_launch: bool,
@@ -56,6 +58,8 @@ impl Default for Settings {
             hotkey: default_hotkey().to_string(),
             auto_paste: true,
             auto_backtrack: false,
+            editor_file_mentions_enabled: false,
+            force_editor_composer: false,
             spoken_press_enter_command: false,
             pause_background_audio: true,
             warm_model_on_launch: true,
@@ -166,7 +170,30 @@ pub struct TranscriptionResponse {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CleanupResponse {
     pub clean_text: String,
+    pub insertion_plan: Option<Vec<CleanupInsertionSegment>>,
     pub provider: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum CleanupInsertionSegment {
+    Text {
+        text: String,
+    },
+    FileMention {
+        query: String,
+        #[serde(rename = "fallbackText")]
+        fallback_text: String,
+    },
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FocusedEditorContext {
+    pub app_name: Option<String>,
+    pub is_supported_editor: bool,
+    pub is_composer: bool,
+    pub confidence: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

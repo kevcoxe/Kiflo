@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS settings (
   hotkey TEXT NOT NULL,
   auto_paste INTEGER NOT NULL,
   auto_backtrack INTEGER NOT NULL DEFAULT 0,
+  editor_file_mentions_enabled INTEGER NOT NULL DEFAULT 0,
+  force_editor_composer INTEGER NOT NULL DEFAULT 0,
   spoken_press_enter_command INTEGER NOT NULL DEFAULT 0,
   pause_background_audio INTEGER NOT NULL DEFAULT 1,
   warm_model_on_launch INTEGER NOT NULL DEFAULT 1,
@@ -64,7 +66,7 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
     let connection = open(path)?;
     let mut settings = connection
         .query_row(
-            "SELECT hotkey, auto_paste, auto_backtrack, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, speech_model, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, typing_style, custom_dictionary, save_history, hide_dock_icon, show_hud
+            "SELECT hotkey, auto_paste, auto_backtrack, editor_file_mentions_enabled, force_editor_composer, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, speech_model, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, typing_style, custom_dictionary, save_history, hide_dock_icon, show_hud
              FROM settings WHERE id = 1",
             [],
             |row| {
@@ -72,19 +74,21 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
                     hotkey: row.get(0)?,
                     auto_paste: row.get::<_, i64>(1)? != 0,
                     auto_backtrack: row.get::<_, i64>(2)? != 0,
-                    spoken_press_enter_command: row.get::<_, i64>(3)? != 0,
-                    pause_background_audio: row.get::<_, i64>(4)? != 0,
-                    warm_model_on_launch: row.get::<_, i64>(5)? != 0,
-                    speech_model: SpeechModel::from_db_value(&row.get::<_, String>(6)?),
-                    recording_cue_volume: row.get(7)?,
-                    restore_clipboard: row.get::<_, i64>(8)? != 0,
-                    interaction_mode: row.get(9)?,
-                    preferred_mode: row.get(10)?,
-                    typing_style: row.get(11)?,
-                    custom_dictionary: row.get(12)?,
-                    save_history: row.get::<_, i64>(13)? != 0,
-                    hide_dock_icon: row.get::<_, i64>(14)? != 0,
-                    show_hud: row.get::<_, i64>(15)? != 0,
+                    editor_file_mentions_enabled: row.get::<_, i64>(3)? != 0,
+                    force_editor_composer: row.get::<_, i64>(4)? != 0,
+                    spoken_press_enter_command: row.get::<_, i64>(5)? != 0,
+                    pause_background_audio: row.get::<_, i64>(6)? != 0,
+                    warm_model_on_launch: row.get::<_, i64>(7)? != 0,
+                    speech_model: SpeechModel::from_db_value(&row.get::<_, String>(8)?),
+                    recording_cue_volume: row.get(9)?,
+                    restore_clipboard: row.get::<_, i64>(10)? != 0,
+                    interaction_mode: row.get(11)?,
+                    preferred_mode: row.get(12)?,
+                    typing_style: row.get(13)?,
+                    custom_dictionary: row.get(14)?,
+                    save_history: row.get::<_, i64>(15)? != 0,
+                    hide_dock_icon: row.get::<_, i64>(16)? != 0,
+                    show_hud: row.get::<_, i64>(17)? != 0,
                 })
             },
         )
@@ -359,6 +363,8 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 hotkey,
                 auto_paste,
                 auto_backtrack,
+                editor_file_mentions_enabled,
+                force_editor_composer,
                 spoken_press_enter_command,
                 pause_background_audio,
                 warm_model_on_launch,
@@ -373,11 +379,13 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 hide_dock_icon,
                 show_hud
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
              ON CONFLICT(id) DO UPDATE SET
                 hotkey = excluded.hotkey,
                 auto_paste = excluded.auto_paste,
                 auto_backtrack = excluded.auto_backtrack,
+                editor_file_mentions_enabled = excluded.editor_file_mentions_enabled,
+                force_editor_composer = excluded.force_editor_composer,
                 spoken_press_enter_command = excluded.spoken_press_enter_command,
                 pause_background_audio = excluded.pause_background_audio,
                 warm_model_on_launch = excluded.warm_model_on_launch,
@@ -395,6 +403,8 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 settings.hotkey,
                 bool_to_integer(settings.auto_paste),
                 bool_to_integer(settings.auto_backtrack),
+                bool_to_integer(settings.editor_file_mentions_enabled),
+                bool_to_integer(settings.force_editor_composer),
                 bool_to_integer(settings.spoken_press_enter_command),
                 bool_to_integer(settings.pause_background_audio),
                 bool_to_integer(settings.warm_model_on_launch),
@@ -430,6 +440,18 @@ fn ensure_settings_columns(connection: &Connection) -> Result<(), String> {
         connection,
         "settings",
         "auto_backtrack",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(
+        connection,
+        "settings",
+        "editor_file_mentions_enabled",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(
+        connection,
+        "settings",
+        "force_editor_composer",
         "INTEGER NOT NULL DEFAULT 0",
     )?;
     add_column_if_missing(
@@ -502,6 +524,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               hotkey TEXT NOT NULL,
               auto_paste INTEGER NOT NULL,
               auto_backtrack INTEGER NOT NULL DEFAULT 0,
+              editor_file_mentions_enabled INTEGER NOT NULL DEFAULT 0,
+              force_editor_composer INTEGER NOT NULL DEFAULT 0,
               spoken_press_enter_command INTEGER NOT NULL DEFAULT 0,
               pause_background_audio INTEGER NOT NULL DEFAULT 1,
               warm_model_on_launch INTEGER NOT NULL DEFAULT 1,
@@ -521,6 +545,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               hotkey,
               auto_paste,
               auto_backtrack,
+              editor_file_mentions_enabled,
+              force_editor_composer,
               spoken_press_enter_command,
               pause_background_audio,
               warm_model_on_launch,
@@ -539,6 +565,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               id,
               hotkey,
               auto_paste,
+              0,
+              0,
               0,
               0,
               COALESCE(pause_background_audio, 1),
@@ -683,9 +711,13 @@ mod tests {
         let mut settings = get_settings(&path).unwrap();
         assert!(settings.warm_model_on_launch);
         assert_eq!(settings.speech_model, SpeechModel::BaseEn);
+        assert!(!settings.editor_file_mentions_enabled);
+        assert!(!settings.force_editor_composer);
         settings.hotkey = "Option+Shift+Space".to_string();
         settings.interaction_mode = "toggle".to_string();
         settings.auto_backtrack = true;
+        settings.editor_file_mentions_enabled = true;
+        settings.force_editor_composer = true;
         settings.spoken_press_enter_command = true;
         settings.pause_background_audio = false;
         settings.warm_model_on_launch = false;
@@ -703,6 +735,8 @@ mod tests {
         assert_eq!(loaded.hotkey, "Option+Shift+Space");
         assert_eq!(loaded.interaction_mode, "toggle");
         assert!(loaded.auto_backtrack);
+        assert!(loaded.editor_file_mentions_enabled);
+        assert!(loaded.force_editor_composer);
         assert!(loaded.spoken_press_enter_command);
         assert!(!loaded.pause_background_audio);
         assert!(!loaded.warm_model_on_launch);
@@ -806,6 +840,8 @@ mod tests {
         assert_eq!(migrated.typing_style, "formal");
         assert!(migrated.custom_dictionary.is_empty());
         assert!(!migrated.auto_backtrack);
+        assert!(!migrated.editor_file_mentions_enabled);
+        assert!(!migrated.force_editor_composer);
         assert!(migrated.show_hud);
         assert!(
             column_exists(&open(&path).unwrap(), "settings", "api_base_url")
@@ -966,8 +1002,17 @@ mod tests {
 
         let settings = get_settings(&path).unwrap();
         assert!(!settings.auto_backtrack);
+        assert!(!settings.editor_file_mentions_enabled);
+        assert!(!settings.force_editor_composer);
         assert_eq!(settings.speech_model, SpeechModel::BaseEn);
         assert!(column_exists(&open(&path).unwrap(), "settings", "auto_backtrack").unwrap());
+        assert!(column_exists(
+            &open(&path).unwrap(),
+            "settings",
+            "editor_file_mentions_enabled"
+        )
+        .unwrap());
+        assert!(column_exists(&open(&path).unwrap(), "settings", "force_editor_composer").unwrap());
         assert!(column_exists(&open(&path).unwrap(), "settings", "speech_model").unwrap());
         assert_eq!(settings.typing_style, "formal");
         assert!(column_exists(&open(&path).unwrap(), "settings", "typing_style").unwrap());

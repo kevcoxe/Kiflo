@@ -14,6 +14,8 @@ const defaultSettings: Settings = {
   hotkey: "Option+Space",
   autoPaste: true,
   autoBacktrack: false,
+  editorFileMentionsEnabled: false,
+  forceEditorComposer: false,
   spokenPressEnterCommand: false,
   pauseBackgroundAudio: true,
   warmModelOnLaunch: true,
@@ -91,12 +93,20 @@ function mockSuccessfulBootstrap() {
     durationMs: 450,
     sampleRate: 16000,
   });
+  vi.spyOn(desktop, "getFocusedEditorContext").mockResolvedValue({
+    appName: "TextEdit",
+    isSupportedEditor: false,
+    isComposer: false,
+    confidence: 0,
+  });
   vi.spyOn(desktop, "getFrontmostApp").mockResolvedValue("TextEdit");
   vi.spyOn(desktop, "captureClipboard").mockResolvedValue({ text: "before" });
   vi.spyOn(desktop, "setClipboardText").mockResolvedValue(undefined);
   vi.spyOn(desktop, "restoreClipboard").mockResolvedValue(undefined);
   vi.spyOn(desktop, "simulatePaste").mockResolvedValue(undefined);
   vi.spyOn(desktop, "simulateEnter").mockResolvedValue(undefined);
+  vi.spyOn(desktop, "simulateTab").mockResolvedValue(undefined);
+  vi.spyOn(desktop, "simulateTextInput").mockResolvedValue(undefined);
   vi.spyOn(desktop, "transcribeAudio").mockResolvedValue({
     raw_text: "hey can you send the update tomorrow",
     language: "en",
@@ -466,6 +476,149 @@ describe("App", () => {
         expect.objectContaining({ autoBacktrack: true }),
       );
     });
+  });
+
+  it("persists the editor file mentions setting from the settings checkbox", async () => {
+    render(<App />);
+
+    const checkbox = await screen.findByLabelText("Enable editor file mentions");
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ editorFileMentionsEnabled: true }),
+      );
+    });
+  });
+
+  it("persists the force editor composer setting from the settings checkbox", async () => {
+    render(<App />);
+
+    const checkbox = await screen.findByLabelText(
+      "Force supported editors to behave like composer fields",
+    );
+    fireEvent.click(checkbox);
+
+    await waitFor(() => {
+      expect(desktop.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ forceEditorComposer: true }),
+      );
+    });
+  });
+
+  it("uses mention insertion in supported editor composers when enabled", async () => {
+    vi.spyOn(desktop, "getSettings").mockResolvedValue({
+      ...defaultSettings,
+      editorFileMentionsEnabled: true,
+    });
+    vi.spyOn(desktop, "getFocusedEditorContext").mockResolvedValue({
+      appName: "Cursor",
+      isSupportedEditor: true,
+      isComposer: true,
+      confidence: 0.96,
+    });
+    vi.spyOn(desktop, "cleanupText").mockResolvedValue({
+      clean_text: "Please open readme.md.",
+      insertion_plan: [
+        { kind: "text", text: "Please open " },
+        { kind: "file_mention", query: "readme.md", fallbackText: "readme.md" },
+        { kind: "text", text: "." },
+      ],
+      provider: "mock",
+    });
+
+    render(<App />);
+
+    const holdButton = await screen.findByRole("button", { name: "Hold to Record" });
+    fireEvent.mouseDown(holdButton);
+    fireEvent.mouseUp(await screen.findByRole("button", { name: "Release to Transcribe" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Inserted")).toBeVisible();
+    });
+
+    expect(desktop.simulatePaste).not.toHaveBeenCalled();
+    expect(desktop.simulateTextInput).toHaveBeenNthCalledWith(1, "Please open ");
+    expect(desktop.simulateTextInput).toHaveBeenNthCalledWith(2, "@");
+    expect(desktop.simulateTextInput).toHaveBeenNthCalledWith(3, "readme.md");
+    expect(desktop.simulateTab).toHaveBeenCalledTimes(1);
+    expect(desktop.simulateTextInput).toHaveBeenNthCalledWith(4, ".");
+  });
+
+  it("falls back to plain paste when the editor is not a composer", async () => {
+    vi.spyOn(desktop, "getSettings").mockResolvedValue({
+      ...defaultSettings,
+      editorFileMentionsEnabled: true,
+    });
+    vi.spyOn(desktop, "getFocusedEditorContext").mockResolvedValue({
+      appName: "Cursor",
+      isSupportedEditor: true,
+      isComposer: false,
+      confidence: 0.52,
+    });
+    vi.spyOn(desktop, "cleanupText").mockResolvedValue({
+      clean_text: "Please open readme.md.",
+      insertion_plan: [
+        { kind: "text", text: "Please open " },
+        { kind: "file_mention", query: "readme.md", fallbackText: "readme.md" },
+        { kind: "text", text: "." },
+      ],
+      provider: "mock",
+    });
+
+    render(<App />);
+
+    const holdButton = await screen.findByRole("button", { name: "Hold to Record" });
+    fireEvent.mouseDown(holdButton);
+    fireEvent.mouseUp(await screen.findByRole("button", { name: "Release to Transcribe" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Inserted")).toBeVisible();
+    });
+
+    expect(desktop.simulatePaste).toHaveBeenCalledTimes(1);
+    expect(desktop.simulateTextInput).not.toHaveBeenCalled();
+    expect(desktop.simulateTab).not.toHaveBeenCalled();
+  });
+
+  it("uses mention insertion when composer mode is forced for a supported editor", async () => {
+    vi.spyOn(desktop, "getSettings").mockResolvedValue({
+      ...defaultSettings,
+      editorFileMentionsEnabled: true,
+      forceEditorComposer: true,
+    });
+    vi.spyOn(desktop, "getFocusedEditorContext").mockResolvedValue({
+      appName: "Cursor",
+      isSupportedEditor: true,
+      isComposer: false,
+      confidence: 0.31,
+    });
+    vi.spyOn(desktop, "cleanupText").mockResolvedValue({
+      clean_text: "Check package.json.",
+      insertion_plan: [
+        { kind: "text", text: "Check " },
+        { kind: "file_mention", query: "package.json", fallbackText: "package.json" },
+        { kind: "text", text: "." },
+      ],
+      provider: "mock",
+    });
+
+    render(<App />);
+
+    const holdButton = await screen.findByRole("button", { name: "Hold to Record" });
+    fireEvent.mouseDown(holdButton);
+    fireEvent.mouseUp(await screen.findByRole("button", { name: "Release to Transcribe" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Inserted")).toBeVisible();
+    });
+
+    expect(desktop.simulatePaste).not.toHaveBeenCalled();
+    expect(desktop.simulateTextInput).toHaveBeenNthCalledWith(1, "Check ");
+    expect(desktop.simulateTextInput).toHaveBeenNthCalledWith(2, "@");
+    expect(desktop.simulateTextInput).toHaveBeenNthCalledWith(3, "package.json");
+    expect(desktop.simulateTab).toHaveBeenCalledTimes(1);
+    expect(desktop.simulateTextInput).toHaveBeenNthCalledWith(4, ".");
   });
 
   it('presses Enter when a recording ends with "press enter" and the setting is enabled', async () => {

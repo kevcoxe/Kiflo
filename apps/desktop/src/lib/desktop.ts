@@ -12,6 +12,7 @@ import type {
   ClipboardSnapshot,
   CleanupResponse,
   DictationMode,
+  FocusedEditorContext,
   HistoryMetrics,
   HistoryRecord,
   ModelStatus,
@@ -158,6 +159,10 @@ export async function getFrontmostApp(): Promise<string | null> {
   return invokeDesktop<string | null>("get_frontmost_app");
 }
 
+export async function getFocusedEditorContext(): Promise<FocusedEditorContext> {
+  return invokeDesktop<FocusedEditorContext>("get_focused_editor_context");
+}
+
 export async function captureClipboard(): Promise<ClipboardSnapshot> {
   return invokeDesktop<ClipboardSnapshot>("capture_clipboard");
 }
@@ -178,6 +183,14 @@ export async function simulatePaste(): Promise<void> {
 
 export async function simulateEnter(): Promise<void> {
   return invokeDesktop("simulate_enter");
+}
+
+export async function simulateTab(): Promise<void> {
+  return invokeDesktop("simulate_tab");
+}
+
+export async function simulateTextInput(text: string): Promise<void> {
+  return invokeDesktop("simulate_text_input", { text });
 }
 
 export async function quitApp(): Promise<void> {

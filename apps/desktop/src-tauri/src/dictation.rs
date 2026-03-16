@@ -13,8 +13,13 @@ use sha1::{Digest, Sha1};
 use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextParameters};
 
 use crate::{
-    models::{CleanupResponse, DictationMode, ModelStatus, SpeechModel, TranscriptionResponse},
-    whisper_models::{all_models, bundled_models, find_model, is_known_model_file, WhisperModelSpec},
+    models::{
+        CleanupInsertionSegment, CleanupResponse, DictationMode, ModelStatus, SpeechModel,
+        TranscriptionResponse,
+    },
+    whisper_models::{
+        all_models, bundled_models, find_model, is_known_model_file, WhisperModelSpec,
+    },
 };
 
 const MODEL_LANGUAGE: &str = "en";
@@ -43,6 +48,22 @@ const EXCITED_OPENERS: &[&str] = &[
     "yay",
 ];
 const EXCITED_PREFIXES: &[&str] = &["let's go", "sounds good", "so excited", "thank you"];
+const FILE_MENTION_PLACEHOLDER_PREFIX: &str = "__TATOR_FILE_";
+const FILE_INTENT_CUES: &[&str] = &["open", "edit", "read", "attach", "use", "check"];
+const FILE_INTENT_SKIP_WORDS: &[&str] = &["a", "an", "the", "this", "that", "my", "your", "our"];
+const FILE_MENTION_BOUNDARY_WORDS: &[&str] = &[
+    "and", "or", "please", "now", "today", "tomorrow", "in", "on", "from", "with", "at", "for",
+];
+const FILE_SEPARATOR_WORDS: &[(&str, &str)] = &[
+    ("slash", "/"),
+    ("dash", "-"),
+    ("hyphen", "-"),
+    ("underscore", "_"),
+];
+const FILE_EXTENSION_WORDS: &[&str] = &[
+    "ts", "tsx", "js", "jsx", "json", "md", "mdx", "py", "rs", "go", "java", "c", "h", "cpp",
+    "css", "scss", "html", "yaml", "yml", "toml", "swift", "kt", "rb", "php", "sh",
+];
 const SPOKEN_CORRECTION_ANCHORS: &[&str] = &[
     "a", "an", "the", "some", "my", "your", "our", "to", "at", "on", "in", "for", "with", "from",
 ];
@@ -138,6 +159,19 @@ enum TypingStyle {
     Excited,
 }
 
+#[derive(Debug, Clone)]
+struct ExtractedMention {
+    placeholder: String,
+    query: String,
+    fallback_text: String,
+}
+
+#[derive(Debug, Default)]
+struct MentionTemplate {
+    template: String,
+    mentions: Vec<ExtractedMention>,
+}
+
 impl TypingStyle {
     fn from_setting(value: &str) -> Self {
         match value {
@@ -191,14 +225,19 @@ pub fn cleanup_text(
         apply_spoken_corrections(&normalized)
     };
     let text = apply_custom_dictionary(&corrected, custom_dictionary);
-    let clean_text = if matches!(mode, DictationMode::BulletList) {
-        format_bullets(&text, style).unwrap_or_else(|| format_sentence(&text, mode, style))
+    let mention_template = extract_file_mentions(&text);
+    let formatted_template = if matches!(mode, DictationMode::BulletList) {
+        format_bullets(&mention_template.template, style)
+            .unwrap_or_else(|| format_sentence(&mention_template.template, mode, style))
     } else {
-        format_sentence(&text, mode, style)
+        format_sentence(&mention_template.template, mode, style)
     };
+    let insertion_plan = build_insertion_plan(&formatted_template, &mention_template.mentions);
+    let clean_text = apply_mentions_to_text(&formatted_template, &mention_template.mentions);
 
     CleanupResponse {
         clean_text,
+        insertion_plan,
         provider: NATIVE_PROVIDER.to_string(),
     }
 }
@@ -422,9 +461,9 @@ fn transcribe_with_model(
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
 
-    state
-        .full(params, samples)
-        .map_err(|error| format!("The selected whisper.cpp model failed to transcribe audio: {error}"))?;
+    state.full(params, samples).map_err(|error| {
+        format!("The selected whisper.cpp model failed to transcribe audio: {error}")
+    })?;
 
     let mut transcript = String::new();
     for segment in state.as_iter() {
@@ -796,6 +835,276 @@ struct DictionaryEntry {
     to: String,
 }
 
+fn extract_file_mentions(text: &str) -> MentionTemplate {
+    let compact = collapse_whitespace(text);
+    if compact.is_empty() {
+        return MentionTemplate::default();
+    }
+
+    let tokens: Vec<&str> = compact.split_whitespace().collect();
+    let mut template_tokens = Vec::with_capacity(tokens.len());
+    let mut mentions = Vec::new();
+    let mut index = 0;
+
+    while index < tokens.len() {
+        if let Some((query, consumed)) = try_parse_explicit_file_query(&tokens, index)
+            .or_else(|| try_parse_bare_basename(&tokens, index))
+        {
+            let placeholder = mention_placeholder(mentions.len());
+            template_tokens.push(placeholder.clone());
+            mentions.push(ExtractedMention {
+                placeholder,
+                fallback_text: query.clone(),
+                query,
+            });
+            index += consumed;
+            continue;
+        }
+
+        template_tokens.push(tokens[index].to_string());
+        index += 1;
+    }
+
+    MentionTemplate {
+        template: collapse_whitespace(&template_tokens.join(" ")),
+        mentions,
+    }
+}
+
+fn try_parse_explicit_file_query(tokens: &[&str], start: usize) -> Option<(String, usize)> {
+    let mut index = start;
+    let mut query = String::new();
+    let mut consumed_any = false;
+    let mut expect_fragment = true;
+    let mut has_file_cue = false;
+
+    while index < tokens.len() {
+        if expect_fragment {
+            if !consumed_any {
+                if let Some(literal) = literal_file_fragment(tokens[index]) {
+                    has_file_cue = literal_has_file_cue(&literal);
+                    query.push_str(&literal);
+                    consumed_any = true;
+                    index += 1;
+                    expect_fragment = false;
+                    continue;
+                }
+            }
+
+            let fragment = simple_file_fragment(tokens[index])?;
+            query.push_str(&fragment);
+            consumed_any = true;
+            index += 1;
+            expect_fragment = false;
+            continue;
+        }
+
+        let word = normalize_word(tokens[index]);
+        if let Some(separator) = spoken_separator(&word) {
+            query.push_str(separator);
+            has_file_cue = true;
+            index += 1;
+            expect_fragment = true;
+            continue;
+        }
+
+        if word == "dot" {
+            let extension = tokens.get(index + 1).map(|token| normalize_word(token))?;
+            if is_known_file_extension(&extension) {
+                query.push('.');
+                query.push_str(&extension);
+                has_file_cue = true;
+                index += 2;
+                expect_fragment = false;
+                continue;
+            }
+        }
+
+        break;
+    }
+
+    (consumed_any && !expect_fragment && has_file_cue).then_some((query, index - start))
+}
+
+fn try_parse_bare_basename(tokens: &[&str], start: usize) -> Option<(String, usize)> {
+    if !has_file_intent(tokens, start) {
+        return None;
+    }
+
+    let basename = simple_file_fragment(tokens[start])?;
+    let next_word = tokens.get(start + 1).map(|token| normalize_word(token));
+    if basename.len() < 2
+        || !basename
+            .chars()
+            .any(|character| character.is_ascii_alphabetic())
+        || literal_has_file_cue(&basename)
+        || next_word
+            .as_deref()
+            .map(|word| !word.is_empty() && !FILE_MENTION_BOUNDARY_WORDS.contains(&word))
+            .unwrap_or(false)
+    {
+        return None;
+    }
+
+    Some((basename, 1))
+}
+
+fn simple_file_fragment(token: &str) -> Option<String> {
+    let trimmed = token
+        .trim_matches(|character: char| !character.is_ascii_alphanumeric())
+        .to_string();
+    (!trimmed.is_empty()
+        && trimmed
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric()))
+    .then_some(trimmed)
+}
+
+fn literal_file_fragment(token: &str) -> Option<String> {
+    let trimmed = token
+        .trim_matches(|character: char| {
+            !character.is_ascii_alphanumeric() && !matches!(character, '.' | '/' | '-' | '_')
+        })
+        .to_string();
+    if trimmed.is_empty() || !literal_has_file_cue(&trimmed) {
+        return None;
+    }
+
+    trimmed
+        .chars()
+        .all(|character| {
+            character.is_ascii_alphanumeric() || matches!(character, '.' | '/' | '-' | '_')
+        })
+        .then_some(trimmed)
+}
+
+fn literal_has_file_cue(value: &str) -> bool {
+    value.contains(['.', '/', '-', '_'])
+}
+
+fn spoken_separator(word: &str) -> Option<&'static str> {
+    FILE_SEPARATOR_WORDS
+        .iter()
+        .find_map(|(spoken, separator)| (*spoken == word).then_some(*separator))
+}
+
+fn is_known_file_extension(word: &str) -> bool {
+    FILE_EXTENSION_WORDS.contains(&word)
+}
+
+fn has_file_intent(tokens: &[&str], start: usize) -> bool {
+    let mut previous_words = Vec::new();
+    let mut index = start;
+
+    while index > 0 && previous_words.len() < 3 {
+        index -= 1;
+        let word = normalize_word(tokens[index]);
+        if word.is_empty() || FILE_INTENT_SKIP_WORDS.contains(&word.as_str()) {
+            continue;
+        }
+        previous_words.push(word);
+    }
+
+    previous_words
+        .first()
+        .map(|word| FILE_INTENT_CUES.contains(&word.as_str()))
+        .unwrap_or(false)
+        || matches!(
+            previous_words.as_slice(),
+            [closest, next, ..] if closest == "at" && next == "look"
+        )
+}
+
+fn mention_placeholder(index: usize) -> String {
+    format!("{FILE_MENTION_PLACEHOLDER_PREFIX}{index}__")
+}
+
+fn build_insertion_plan(
+    formatted_template: &str,
+    mentions: &[ExtractedMention],
+) -> Option<Vec<CleanupInsertionSegment>> {
+    if mentions.is_empty() {
+        return None;
+    }
+
+    let mut remaining = formatted_template;
+    let mut plan = Vec::new();
+
+    for mention in mentions {
+        let placeholder_index = remaining.find(&mention.placeholder)?;
+        let before = &remaining[..placeholder_index];
+        if !before.is_empty() {
+            plan.push(CleanupInsertionSegment::Text {
+                text: before.to_string(),
+            });
+        }
+        plan.push(CleanupInsertionSegment::FileMention {
+            query: mention.query.clone(),
+            fallback_text: mention.fallback_text.clone(),
+        });
+        remaining = &remaining[placeholder_index + mention.placeholder.len()..];
+    }
+
+    if !remaining.is_empty() {
+        plan.push(CleanupInsertionSegment::Text {
+            text: remaining.to_string(),
+        });
+    }
+
+    Some(plan)
+}
+
+fn apply_mentions_to_text(formatted_template: &str, mentions: &[ExtractedMention]) -> String {
+    if mentions.is_empty() {
+        return formatted_template.to_string();
+    }
+
+    let mut remaining = formatted_template;
+    let mut output = String::new();
+
+    for mention in mentions {
+        let Some(placeholder_index) = remaining.find(&mention.placeholder) else {
+            return formatted_template.to_string();
+        };
+        output.push_str(&remaining[..placeholder_index]);
+        output.push_str(&mention.fallback_text);
+        remaining = &remaining[placeholder_index + mention.placeholder.len()..];
+    }
+
+    output.push_str(remaining);
+    output
+}
+
+fn is_placeholder_token(token: &str) -> bool {
+    token.starts_with(FILE_MENTION_PLACEHOLDER_PREFIX) && token.ends_with("__")
+}
+
+fn is_only_placeholder_text(text: &str) -> bool {
+    let mut tokens = text.split_whitespace();
+    matches!(
+        (tokens.next(), tokens.next()),
+        (Some(token), None) if is_placeholder_token(token)
+    )
+}
+
+fn first_non_placeholder_word(text: &str) -> String {
+    text.split_whitespace()
+        .filter(|token| !is_placeholder_token(token))
+        .find_map(|token| {
+            let normalized = normalize_word(token);
+            (!normalized.is_empty()).then_some(normalized)
+        })
+        .unwrap_or_default()
+}
+
+fn placeholder_free_lowercase(text: &str) -> String {
+    text.split_whitespace()
+        .filter(|token| !is_placeholder_token(token))
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
 fn format_bullets(text: &str, style: TypingStyle) -> Option<String> {
     let candidate = strip_list_prefix(text);
     if candidate.is_empty() {
@@ -846,15 +1155,15 @@ fn format_sentence(text: &str, mode: DictationMode, style: TypingStyle) -> Strin
         return sentence;
     }
 
+    if is_only_placeholder_text(&sentence) {
+        return sentence;
+    }
+
     if matches!(style, TypingStyle::VeryCasual) {
         return sentence;
     }
 
-    let opener = sentence
-        .split_whitespace()
-        .next()
-        .unwrap_or_default()
-        .to_lowercase();
+    let opener = first_non_placeholder_word(&sentence);
     let is_question =
         !matches!(mode, DictationMode::Chat) && QUESTION_OPENERS.contains(&opener.as_str());
 
@@ -906,10 +1215,10 @@ fn excited_sentence(mut sentence: String, is_question: bool) -> String {
 }
 
 fn should_use_excited_punctuation(sentence: &str) -> bool {
-    let lowered = sentence.to_lowercase();
-    let opener = lowered.split_whitespace().next().unwrap_or_default();
+    let lowered = placeholder_free_lowercase(sentence);
+    let opener = first_non_placeholder_word(&lowered);
 
-    EXCITED_OPENERS.contains(&opener)
+    EXCITED_OPENERS.contains(&opener.as_str())
         || EXCITED_PREFIXES
             .iter()
             .any(|prefix| lowered.starts_with(prefix))
@@ -917,11 +1226,31 @@ fn should_use_excited_punctuation(sentence: &str) -> bool {
 
 fn sentence_case(text: &str) -> String {
     let compact = collapse_whitespace(text);
-    let mut characters = compact.chars();
-    match characters.next() {
-        Some(first) => first.to_uppercase().collect::<String>() + characters.as_str(),
-        None => String::new(),
+    if compact.is_empty() {
+        return compact;
     }
+
+    let mut tokens = compact
+        .split_whitespace()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>();
+
+    for token in &mut tokens {
+        if is_placeholder_token(token) {
+            continue;
+        }
+
+        if let Some((index, character)) = token
+            .char_indices()
+            .find(|(_, character)| character.is_ascii_alphabetic())
+        {
+            let end = index + character.len_utf8();
+            token.replace_range(index..end, &character.to_uppercase().to_string());
+            break;
+        }
+    }
+
+    tokens.join(" ")
 }
 
 fn collapse_whitespace(value: &str) -> String {
@@ -1034,7 +1363,8 @@ fn model_is_available(
     resource_dir: Option<&Path>,
     model: SpeechModel,
 ) -> bool {
-    model_is_installed(app_data_dir, model) || bundled_model_source_path(resource_dir, model).is_some()
+    model_is_installed(app_data_dir, model)
+        || bundled_model_source_path(resource_dir, model).is_some()
 }
 
 fn available_models(app_data_dir: &Path, resource_dir: Option<&Path>) -> Vec<SpeechModel> {
@@ -1223,10 +1553,11 @@ fn remove_unknown_installed_models(app_data_dir: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    let entries =
-        fs::read_dir(&model_dir).map_err(|error| format!("Unable to inspect the model directory: {error}"))?;
+    let entries = fs::read_dir(&model_dir)
+        .map_err(|error| format!("Unable to inspect the model directory: {error}"))?;
     for entry in entries {
-        let entry = entry.map_err(|error| format!("Unable to inspect the model directory: {error}"))?;
+        let entry =
+            entry.map_err(|error| format!("Unable to inspect the model directory: {error}"))?;
         let path = entry.path();
         if !path.is_file() {
             continue;
@@ -1554,6 +1885,138 @@ mod tests {
     }
 
     #[test]
+    fn cleanup_extracts_explicit_spoken_paths_into_an_insertion_plan() {
+        let result = cleanup_text(
+            "please open src slash app dot tsx",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+            "formal",
+        );
+        assert_eq!(result.clean_text, "Please open src/app.tsx.");
+        assert_eq!(
+            result.insertion_plan,
+            Some(vec![
+                CleanupInsertionSegment::Text {
+                    text: "Please open ".to_string(),
+                },
+                CleanupInsertionSegment::FileMention {
+                    query: "src/app.tsx".to_string(),
+                    fallback_text: "src/app.tsx".to_string(),
+                },
+                CleanupInsertionSegment::Text {
+                    text: ".".to_string(),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn cleanup_extracts_spoken_separator_file_names() {
+        let result = cleanup_text(
+            "use use dash dictation dash controller dot ts",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+            "formal",
+        );
+        assert_eq!(result.clean_text, "Use use-dictation-controller.ts.");
+        assert_eq!(
+            result.insertion_plan,
+            Some(vec![
+                CleanupInsertionSegment::Text {
+                    text: "Use ".to_string(),
+                },
+                CleanupInsertionSegment::FileMention {
+                    query: "use-dictation-controller.ts".to_string(),
+                    fallback_text: "use-dictation-controller.ts".to_string(),
+                },
+                CleanupInsertionSegment::Text {
+                    text: ".".to_string(),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn cleanup_extracts_bare_basenames_after_file_intent_cues() {
+        let result = cleanup_text(
+            "open readme",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+            "formal",
+        );
+        assert_eq!(result.clean_text, "Open readme.");
+        assert_eq!(
+            result.insertion_plan,
+            Some(vec![
+                CleanupInsertionSegment::Text {
+                    text: "Open ".to_string(),
+                },
+                CleanupInsertionSegment::FileMention {
+                    query: "readme".to_string(),
+                    fallback_text: "readme".to_string(),
+                },
+                CleanupInsertionSegment::Text {
+                    text: ".".to_string(),
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn cleanup_supports_multiple_file_mentions() {
+        let result = cleanup_text(
+            "please open readme dot md and src slash app dot tsx",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+            "formal",
+        );
+        assert_eq!(result.clean_text, "Please open readme.md and src/app.tsx.");
+        assert_eq!(result.insertion_plan.as_ref().map(Vec::len), Some(5));
+    }
+
+    #[test]
+    fn cleanup_does_not_extract_vague_multi_word_phrases() {
+        let result = cleanup_text(
+            "please check the auth service tomorrow",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+            "formal",
+        );
+        assert_eq!(result.clean_text, "Please check the auth service tomorrow.");
+        assert!(result.insertion_plan.is_none());
+    }
+
+    #[test]
+    fn cleanup_preserves_bare_file_references_without_trailing_punctuation() {
+        let result = cleanup_text(
+            "readme dot md",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+            "formal",
+        );
+        assert_eq!(result.clean_text, "readme.md");
+        assert_eq!(
+            result.insertion_plan,
+            Some(vec![CleanupInsertionSegment::FileMention {
+                query: "readme.md".to_string(),
+                fallback_text: "readme.md".to_string(),
+            }])
+        );
+    }
+
+    #[test]
     fn model_status_reports_bundled_models_by_default() {
         let runtime = Mutex::new(ModelRuntimeState::default());
         let root = temp_root("status-base");
@@ -1645,8 +2108,11 @@ mod tests {
 
     #[test]
     fn bundled_small_model_reports_missing_model_assets() {
-        let message =
-            model_availability_error(Path::new("/tmp/tator-missing-small-model"), None, SpeechModel::SmallEn);
+        let message = model_availability_error(
+            Path::new("/tmp/tator-missing-small-model"),
+            None,
+            SpeechModel::SmallEn,
+        );
 
         if resolve_dev_bundled_model(SpeechModel::SmallEn).is_some() {
             assert!(message.is_none());
@@ -1693,7 +2159,9 @@ mod tests {
 
         assert!(installed_path.ends_with(&find_model(SpeechModel::BaseEn).file_name));
         assert!(installed_path.exists());
-        assert!(installed_dir.join(&find_model(SpeechModel::SmallEn).file_name).exists());
+        assert!(installed_dir
+            .join(&find_model(SpeechModel::SmallEn).file_name)
+            .exists());
         assert!(!installed_dir.join("ggml-tiny.en.bin").exists());
 
         let _ = std::fs::remove_dir_all(&root);
@@ -1718,7 +2186,9 @@ mod tests {
             install_model_from_reader(&app_data_dir, &small_spec, Cursor::new(small_bytes))
                 .unwrap();
 
-        assert!(installed_dir.join(&find_model(SpeechModel::BaseEn).file_name).exists());
+        assert!(installed_dir
+            .join(&find_model(SpeechModel::BaseEn).file_name)
+            .exists());
         assert!(installed_path.exists());
         assert!(installed_path.ends_with(&find_model(SpeechModel::SmallEn).file_name));
 
@@ -1803,7 +2273,10 @@ mod tests {
     impl Read for BrokenReader {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             if self.emitted_chunk {
-                return Err(io::Error::new(io::ErrorKind::Interrupted, "simulated failure"));
+                return Err(io::Error::new(
+                    io::ErrorKind::Interrupted,
+                    "simulated failure",
+                ));
             }
 
             let chunk = b"partial";
