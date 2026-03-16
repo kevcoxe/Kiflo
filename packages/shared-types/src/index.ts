@@ -38,6 +38,10 @@ export const SPEECH_MODELS = [
 
 export type SpeechModel = (typeof SPEECH_MODELS)[number];
 
+export const THEMES = ["system", "light", "dark"] as const;
+
+export type Theme = (typeof THEMES)[number];
+
 export interface Settings {
   hotkey: string;
   autoPaste: boolean;
@@ -57,6 +61,7 @@ export interface Settings {
   saveHistory: boolean;
   hideDockIcon: boolean;
   showHud: boolean;
+  theme: Theme;
 }
 
 export interface HistoryRecord {

@@ -50,6 +50,7 @@ pub struct Settings {
     pub save_history: bool,
     pub hide_dock_icon: bool,
     pub show_hud: bool,
+    pub theme: String,
 }
 
 impl Default for Settings {
@@ -73,6 +74,7 @@ impl Default for Settings {
             save_history: true,
             hide_dock_icon: false,
             show_hud: true,
+            theme: "system".to_string(),
         }
     }
 }

@@ -8,6 +8,7 @@ import {
   type ModelStatus,
   type SpeechModel,
   type Settings,
+  THEMES,
 } from "@tator/shared-types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -126,6 +127,24 @@ export function SettingsPanel({
         <CardTitle className="text-base">Settings</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="grid gap-1.5">
+          <Label htmlFor="appearance-select">Appearance</Label>
+          <select
+            id="appearance-select"
+            className={selectClass}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+              update("theme", event.target.value as Settings["theme"])
+            }
+            value={settings.theme}
+          >
+            {THEMES.map((t) => (
+              <option key={t} value={t}>
+                {t === "system" ? "System" : t === "light" ? "Light" : "Dark"}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <div className="grid gap-1.5">
           <Label htmlFor="hotkey-input">Global shortcut</Label>
           <Input
