@@ -132,8 +132,24 @@ body.hud-window #root {
 .mode-select,
 .field input,
 .field select {
-  background: rgba(255, 255, 255, 0.04);
+  background-color: rgba(255, 255, 255, 0.04);
   color: inherit;
+}
+
+select.mode-select,
+.field select {
+  appearance: none;
+  -webkit-appearance: none;
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(244, 239, 231, 0.72) 50%),
+    linear-gradient(135deg, rgba(244, 239, 231, 0.72) 50%, transparent 50%);
+  background-position:
+    calc(100% - 1.2rem) calc(50% - 0.15rem),
+    calc(100% - 0.85rem) calc(50% - 0.15rem);
+  background-repeat: no-repeat;
+  background-size: 0.45rem 0.45rem;
+  line-height: 1.2;
+  padding-right: 2.75rem;
 }
 
 .primary-button:disabled {
