@@ -29,6 +29,7 @@ const defaultSettings: Settings = {
   saveHistory: true,
   hideDockIcon: false,
   showHud: true,
+  theme: "system",
 };
 
 const defaultPermissions: PermissionStatus = {
