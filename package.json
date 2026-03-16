@@ -9,6 +9,9 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
+    "build:desktop:linux": "npm run tauri:build --workspace @tator/desktop",
+    "build:desktop:linux:docker": "bash ./scripts/build-desktop-linux-docker.sh",
+    "build:desktop:macos": "npm run tauri:build --workspace @tator/desktop",
     "dev:desktop": "npm run dev --workspace @tator/desktop",
     "debug:desktop:release:local": "bash ./scripts/debug-desktop-release-local.sh",
     "release:prep": "node ./scripts/release-prep.mjs",

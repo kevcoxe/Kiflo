@@ -14,6 +14,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - runner: ubuntu-22.04
+            platform_name: linux
+            cmake_c_flags: ""
+            cmake_cxx_flags: ""
+            macos_deployment_target: ""
+            ggml_native: ""
           - runner: macos-15
             platform_name: macos
             cmake_c_flags: -D_LIBCPP_DISABLE_AVAILABILITY
@@ -47,6 +53,12 @@ jobs:
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux system dependencies
+        if: matrix.platform_name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install JavaScript dependencies
         run: npm ci

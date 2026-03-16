@@ -32,7 +32,7 @@ The shipped desktop app does not talk to a separate HTTP API. Transcription and 
 ## GitHub Release Workflow
 
 The repository includes a GitHub Actions workflow at `.github/workflows/release-desktop.yml`
-that builds the desktop app for macOS and Windows and publishes the generated artifacts to the
+that builds the desktop app for macOS, Windows, and Linux and publishes the generated artifacts to the
 repo's GitHub Releases page.
 
 To cut a release:
@@ -42,11 +42,15 @@ To cut a release:
 3. Commit the changelog and any related release changes.
 4. Push a version tag that starts with `v`, for example `v0.3.0`.
 5. GitHub Actions will sync the desktop app version from that tag, read the matching section from
-   `CHANGELOG.md`, and attach the macOS and Windows Tauri bundles to a GitHub Release for that tag.
+   `CHANGELOG.md`, and attach the macOS, Windows, and Linux Tauri bundles to a GitHub Release for that tag.
 
 The workflow publishes unsigned macOS and Windows artifacts by default. If you need signed or
 notarized releases, add the relevant platform credentials as GitHub Actions secrets and extend the
 workflow.
+
+Tauri's current distribution docs still require macOS bundles to be created on a Mac, and Windows
+cross-compilation from non-Windows hosts is documented as a caveated last resort. Linux is the
+platform Tauri explicitly recommends building with Docker or GitHub Actions for reproducibility.
 
 ## Debugging GitHub-Built Bundles
 
@@ -54,8 +58,16 @@ workflow.
   worktree using the same high-level steps as the release workflow, then writes a tarred `.app`
   bundle plus metadata to a local output directory.
 - The manual GitHub Actions workflow at `.github/workflows/debug-desktop-bundle.yml` builds debug
-  artifacts on `macos-15` and `windows-2025`, then uploads the full Tauri bundle output plus the
+  artifacts on `ubuntu-22.04`, `macos-15`, and `windows-2025`, then uploads the full Tauri bundle output plus the
   bundled model manifest so you can compare packaged builds across platforms.
+
+## Local Build Commands
+
+- `npm run build:desktop:macos` builds the macOS app bundle on a Mac host.
+- `npm run build:desktop:linux` builds Linux bundles when run on a Linux host with the required Tauri system packages installed.
+- `npm run build:desktop:linux:docker` builds Linux bundles in Docker using `docker/desktop-linux-builder.Dockerfile`. By default this uses `linux/amd64` so you can produce x64 Linux artifacts from Apple Silicon Macs too, though emulation will be slower.
+
+The Docker workflow writes Linux artifacts to `apps/desktop/src-tauri/target/release/bundle`.
 
 ## Current MVP Slice
 
