@@ -8,7 +8,22 @@ import {
   type ModelStatus,
   type SpeechModel,
   type Settings,
+  THEMES,
 } from "@tator/shared-types";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 
 interface SettingsPanelProps {
   settings: Settings;
@@ -23,6 +38,12 @@ interface DictionaryRow {
 }
 
 const DEFAULT_RECORDING_CUE_VOLUME = 75;
+
+const selectClass = cn(
+  "flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm",
+  "ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+  "disabled:cursor-not-allowed disabled:opacity-50",
+);
 
 export function SettingsPanel({
   settings,
@@ -101,292 +122,298 @@ export function SettingsPanel({
   );
 
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2>Settings</h2>
-      </div>
-      <label className="field">
-        <span>Global shortcut</span>
-        <input
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("hotkey", event.target.value)
-          }
-          type="text"
-          value={settings.hotkey}
-        />
-      </label>
-      <label className="field">
-        <span>Recording trigger</span>
-        <select
-          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-            update("interactionMode", event.target.value as Settings["interactionMode"])
-          }
-          value={settings.interactionMode}
-        >
-          {RECORDING_INTERACTION_MODES.map((mode) => (
-            <option key={mode} value={mode}>
-              {mode === "hold" ? "Hold to record" : "Toggle on/off"}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="field">
-        <span>Preferred mode</span>
-        <select
-          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-            update("preferredMode", event.target.value as Settings["preferredMode"])
-          }
-          value={settings.preferredMode}
-        >
-          {DICTATION_MODES.map((mode) => (
-            <option key={mode} value={mode}>
-              {mode}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label className="field">
-        <span>Typing style</span>
-        <p className="field-help muted">
-          Go formal in docs, very casual in messages, or excited in upbeat notes.
-        </p>
-        <select
-          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-            update("typingStyle", event.target.value as Settings["typingStyle"])
-          }
-          value={settings.typingStyle}
-        >
-          {TYPING_STYLES.map((style) => (
-            <option key={style} value={style}>
-              {labelForTypingStyle(style)}
-            </option>
-          ))}
-        </select>
-      </label>
-      <div className="field">
-        <span>Speech model</span>
-        <p className="field-help muted">
-          Base English and Small English are bundled with the app. Small English is
-          more accurate, but it uses more disk space and takes longer to warm up.
-        </p>
-        <select
-          aria-label="Speech model"
-          disabled={modelStatus.downloading}
-          onChange={(event: ChangeEvent<HTMLSelectElement>) =>
-            update("speechModel", event.target.value as Settings["speechModel"])
-          }
-          value={settings.speechModel}
-        >
-          {selectableSpeechModels.map((model) => (
-            <option key={model} value={model}>
-              {labelForSpeechModel(model, modelStatus.bundledModels)}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div className="field">
-        <span id="custom-dictionary-label">Custom dictionary</span>
-        <p className="field-help muted">
-          Each row replaces whole words or phrases only, case-insensitively.
-        </p>
-        <div className="dictionary-table-wrap">
-          <table aria-labelledby="custom-dictionary-label" className="dictionary-table">
-            <thead>
-            {dictionaryRows.length > 0 ? (
-              <tr>
-                <th scope="col">Heard</th>
-                <th scope="col">Replace with</th>
-                <th aria-label="Actions" scope="col" />
-              </tr>
-            ) : null}
-            </thead>
-            <tbody>
-              {dictionaryRows.length > 0 ? (
-                dictionaryRows.map((row, index) => (
-                  <tr key={row.id}>
-                    <td>
-                      <input
-                        aria-label={`Dictionary source ${index + 1}`}
-                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                          updateDictionaryRow(row.id, "source", event.target.value)
-                        }
-                        placeholder="Rebecca"
-                        spellCheck={false}
-                        type="text"
-                        value={row.source}
-                      />
-                    </td>
-                    <td>
-                      <input
-                        aria-label={`Dictionary replacement ${index + 1}`}
-                        onChange={(event: ChangeEvent<HTMLInputElement>) =>
-                          updateDictionaryRow(row.id, "replacement", event.target.value)
-                        }
-                        placeholder="Rebekah"
-                        spellCheck={false}
-                        type="text"
-                        value={row.replacement}
-                      />
-                    </td>
-                    <td className="dictionary-row-actions">
-                      <button
-                        className="secondary-button"
-                        onClick={() => removeDictionaryRow(row.id)}
-                        type="button"
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              ) : (
-                <tr>
-                  <td className="dictionary-empty muted" colSpan={3}>
-                    No custom replacements yet.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Settings</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid gap-1.5">
+          <Label htmlFor="appearance-select">Appearance</Label>
+          <select
+            id="appearance-select"
+            className={selectClass}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+              update("theme", event.target.value as Settings["theme"])
+            }
+            value={settings.theme}
+          >
+            {THEMES.map((t) => (
+              <option key={t} value={t}>
+                {t === "system" ? "System" : t === "light" ? "Light" : "Dark"}
+              </option>
+            ))}
+          </select>
         </div>
-        <div className="dictionary-actions">
-          <button className="secondary-button" onClick={addDictionaryRow} type="button">
-            Add word
-          </button>
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="hotkey-input">Global shortcut</Label>
+          <Input
+            id="hotkey-input"
+            onChange={(event: ChangeEvent<HTMLInputElement>) =>
+              update("hotkey", event.target.value)
+            }
+            type="text"
+            value={settings.hotkey}
+          />
         </div>
-      </div>
-      <label className="toggle">
-        <input
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="interaction-mode-select">Recording trigger</Label>
+          <select
+            id="interaction-mode-select"
+            className={selectClass}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+              update("interactionMode", event.target.value as Settings["interactionMode"])
+            }
+            value={settings.interactionMode}
+          >
+            {RECORDING_INTERACTION_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode === "hold" ? "Hold to record" : "Toggle on/off"}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="preferred-mode-select">Preferred mode</Label>
+          <select
+            id="preferred-mode-select"
+            className={selectClass}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+              update("preferredMode", event.target.value as Settings["preferredMode"])
+            }
+            value={settings.preferredMode}
+          >
+            {DICTATION_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {mode}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="typing-style-select">Typing style</Label>
+          <p className="text-sm text-muted-foreground m-0">
+            Go formal in docs, very casual in messages, or excited in upbeat notes.
+          </p>
+          <select
+            id="typing-style-select"
+            className={selectClass}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+              update("typingStyle", event.target.value as Settings["typingStyle"])
+            }
+            value={settings.typingStyle}
+          >
+            {TYPING_STYLES.map((style) => (
+              <option key={style} value={style}>
+                {labelForTypingStyle(style)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label htmlFor="speech-model-select">Speech model</Label>
+          <p className="text-sm text-muted-foreground m-0">
+            Base English and Small English are bundled with the app. Small English is
+            more accurate, but it uses more disk space and takes longer to warm up.
+          </p>
+          <select
+            aria-label="Speech model"
+            id="speech-model-select"
+            className={selectClass}
+            disabled={modelStatus.downloading}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+              update("speechModel", event.target.value as Settings["speechModel"])
+            }
+            value={settings.speechModel}
+          >
+            {selectableSpeechModels.map((model) => (
+              <option key={model} value={model}>
+                {labelForSpeechModel(model, modelStatus.bundledModels)}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="grid gap-1.5">
+          <Label id="custom-dictionary-label">Custom dictionary</Label>
+          <p className="text-sm text-muted-foreground m-0">
+            Each row replaces whole words or phrases only, case-insensitively.
+          </p>
+          <div className="overflow-x-auto">
+            <Table aria-labelledby="custom-dictionary-label">
+              <TableHeader>
+                {dictionaryRows.length > 0 ? (
+                  <TableRow>
+                    <TableHead>Heard</TableHead>
+                    <TableHead>Replace with</TableHead>
+                    <TableHead aria-label="Actions" />
+                  </TableRow>
+                ) : null}
+              </TableHeader>
+              <TableBody>
+                {dictionaryRows.length > 0 ? (
+                  dictionaryRows.map((row, index) => (
+                    <TableRow key={row.id}>
+                      <TableCell>
+                        <Input
+                          aria-label={`Dictionary source ${index + 1}`}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            updateDictionaryRow(row.id, "source", event.target.value)
+                          }
+                          placeholder="Rebecca"
+                          spellCheck={false}
+                          type="text"
+                          value={row.source}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          aria-label={`Dictionary replacement ${index + 1}`}
+                          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+                            updateDictionaryRow(row.id, "replacement", event.target.value)
+                          }
+                          placeholder="Rebekah"
+                          spellCheck={false}
+                          type="text"
+                          value={row.replacement}
+                        />
+                      </TableCell>
+                      <TableCell className="w-px whitespace-nowrap">
+                        <Button
+                          variant="outline"
+                          className="border-red-800/40 bg-red-950/20 text-red-300 hover:bg-red-950/40 hover:text-red-200"
+                          onClick={() => removeDictionaryRow(row.id)}
+                          type="button"
+                        >
+                          Remove
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                ) : (
+                  <TableRow>
+                    <TableCell colSpan={3} className="text-muted-foreground py-3.5">
+                      No custom replacements yet.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          <div className="flex justify-start mt-1">
+            <Button variant="outline" onClick={addDictionaryRow} type="button">
+              Add word
+            </Button>
+          </div>
+        </div>
+
+        <ToggleSetting
+          id="auto-paste"
           checked={settings.autoPaste}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("autoPaste", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("autoPaste", checked)}
+          label="Paste automatically after cleanup"
         />
-        <span>Paste automatically after cleanup</span>
-      </label>
-      <label className="toggle">
-        <input
+        <ToggleSetting
+          id="auto-backtrack"
           checked={settings.autoBacktrack}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("autoBacktrack", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("autoBacktrack", checked)}
+          label="Enable Auto Backtrack for spoken corrections"
         />
-        <span>Enable Auto Backtrack for spoken corrections</span>
-      </label>
-      <label className="toggle">
-        <input
+        <ToggleSetting
+          id="editor-file-mentions"
           checked={settings.editorFileMentionsEnabled}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("editorFileMentionsEnabled", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("editorFileMentionsEnabled", checked)}
+          label="Enable editor file mentions"
         />
-        <span>Enable editor file mentions</span>
-      </label>
-      <p className="field-help muted">
-        In supported editor chat boxes, convert spoken file names into @mentions and
-        confirm them with Tab.
-      </p>
-      <label className="toggle">
-        <input
+        <p className="text-sm text-muted-foreground m-0">
+          In supported editor chat boxes, convert spoken file names into @mentions and
+          confirm them with Tab.
+        </p>
+        <ToggleSetting
+          id="force-editor-composer"
           checked={settings.forceEditorComposer}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("forceEditorComposer", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("forceEditorComposer", checked)}
+          label="Force supported editors to behave like composer fields"
         />
-        <span>Force supported editors to behave like composer fields</span>
-      </label>
-      <p className="field-help muted">
-        Use @mentions and Tab even when Tator cannot confirm the focused field is a
-        chat/composer input.
-      </p>
-      <label className="toggle">
-        <input
+        <p className="text-sm text-muted-foreground m-0">
+          Use @mentions and Tab even when Tator cannot confirm the focused field is a
+          chat/composer input.
+        </p>
+        <ToggleSetting
+          id="spoken-press-enter"
           checked={settings.spokenPressEnterCommand}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("spokenPressEnterCommand", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("spokenPressEnterCommand", checked)}
+          label='Enable spoken "press enter" at the end of a recording'
         />
-        <span>Enable spoken "press enter" at the end of a recording</span>
-      </label>
-      <label className="toggle">
-        <input
+        <ToggleSetting
+          id="pause-background-audio"
           checked={settings.pauseBackgroundAudio}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("pauseBackgroundAudio", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("pauseBackgroundAudio", checked)}
+          label="Pause background audio during recording"
         />
-        <span>Pause background audio during recording</span>
-      </label>
-      <label className="toggle">
-        <input
+        <ToggleSetting
+          id="warm-model-on-launch"
           checked={settings.warmModelOnLaunch}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("warmModelOnLaunch", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("warmModelOnLaunch", checked)}
+          label="Warm speech model on app launch"
         />
-        <span>Warm speech model on app launch</span>
-      </label>
-      <label className="toggle">
-        <input
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
+        <ToggleSetting
+          id="recording-cue"
+          checked={settings.recordingCueVolume > 0}
+          onChange={(checked) =>
             update(
               "recordingCueVolume",
-              event.target.checked ? previousCueVolumeRef.current : 0,
+              checked ? previousCueVolumeRef.current : 0,
             )
           }
-          checked={settings.recordingCueVolume > 0}
-          type="checkbox"
+          label="Play recording cue"
         />
-        <span>Play recording cue</span>
-      </label>
-      <label className="toggle">
-        <input
+        <ToggleSetting
+          id="restore-clipboard"
           checked={settings.restoreClipboard}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("restoreClipboard", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("restoreClipboard", checked)}
+          label="Restore clipboard after paste"
         />
-        <span>Restore clipboard after paste</span>
-      </label>
-      <label className="toggle">
-        <input
+        <ToggleSetting
+          id="save-history"
           checked={settings.saveHistory}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("saveHistory", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("saveHistory", checked)}
+          label="Save recent dictation history"
         />
-        <span>Save recent dictation history</span>
-      </label>
-      <label className="toggle">
-        <input
+        <ToggleSetting
+          id="hide-dock-icon"
           checked={settings.hideDockIcon}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("hideDockIcon", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("hideDockIcon", checked)}
+          label="Hide Dock icon after closing the window"
         />
-        <span>Hide Dock icon after closing the window</span>
-      </label>
-      <label className="toggle">
-        <input
+        <ToggleSetting
+          id="show-hud"
           checked={settings.showHud}
-          onChange={(event: ChangeEvent<HTMLInputElement>) =>
-            update("showHud", event.target.checked)
-          }
-          type="checkbox"
+          onChange={(checked) => update("showHud", checked)}
+          label="Show recording HUD overlay"
         />
-        <span>Show recording HUD overlay</span>
-      </label>
-    </section>
+      </CardContent>
+    </Card>
+  );
+}
+
+interface ToggleSettingProps {
+  id: string;
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+}
+
+function ToggleSetting({ id, checked, onChange, label }: ToggleSettingProps) {
+  return (
+    <div className="flex items-center gap-3">
+      <Switch id={id} checked={checked} onCheckedChange={onChange} />
+      <Label htmlFor={id}>{label}</Label>
+    </div>
   );
 }
 

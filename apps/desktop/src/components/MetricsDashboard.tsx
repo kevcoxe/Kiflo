@@ -1,5 +1,9 @@
 import { useState } from "react";
 import type { HistoryMetrics } from "@tator/shared-types";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 
 interface MetricsDashboardProps {
   metrics: HistoryMetrics;
@@ -31,57 +35,60 @@ export function MetricsDashboard({ metrics }: MetricsDashboardProps) {
       : "No spoken words yet.";
 
   return (
-    <section className="panel">
-      <div className="panel-header">
-        <h2>Dictation metrics</h2>
-        <span>{metrics.totalSessions} sessions</span>
-      </div>
-
-      <div className="metrics-grid">
-        <article className="metric-card">
-          <h3>Total words spoken</h3>
-          <p>{metrics.totalWordsSpoken.toLocaleString()}</p>
-        </article>
-        <article className="metric-card">
-          <h3>Total speaking time</h3>
-          <p>{formatDuration(metrics.totalSpeakingTimeMs)}</p>
-        </article>
-        <article className="metric-card">
-          <h3>Estimated typing time saved</h3>
-          <p>{formatDuration(metrics.estimatedTypingTimeSavedMs)}</p>
-        </article>
-        <article className="metric-card">
-          <h3>Avg words / session</h3>
-          <p>{metrics.averageWordsPerSession.toFixed(1)}</p>
-        </article>
-      </div>
-
-      <div className="result-block">
-        <div className="metrics-top-words-header">
-          <strong>Top words</strong>
-          <label className="toggle metrics-toggle">
-            <input
-              aria-label="Hide common words"
-              checked={hideCommonWords}
-              onChange={(event) => setHideCommonWords(event.target.checked)}
-              type="checkbox"
-            />
-            <span>Hide common words</span>
-          </label>
+    <Card>
+      <CardHeader className="flex flex-row items-baseline justify-between gap-4 pb-3">
+        <h2 className="text-base font-semibold leading-none tracking-tight">Dictation metrics</h2>
+        <span className="text-sm text-muted-foreground">{metrics.totalSessions} sessions</span>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(170px,1fr))] gap-3">
+          <article className="border border-border rounded-2xl bg-white/[0.03] p-3">
+            <h3 className="m-0 text-muted-foreground text-xs font-semibold uppercase">Total words spoken</h3>
+            <p className="mt-1.5 mb-0 text-xl font-bold">{metrics.totalWordsSpoken.toLocaleString()}</p>
+          </article>
+          <article className="border border-border rounded-2xl bg-white/[0.03] p-3">
+            <h3 className="m-0 text-muted-foreground text-xs font-semibold uppercase">Total speaking time</h3>
+            <p className="mt-1.5 mb-0 text-xl font-bold">{formatDuration(metrics.totalSpeakingTimeMs)}</p>
+          </article>
+          <article className="border border-border rounded-2xl bg-white/[0.03] p-3">
+            <h3 className="m-0 text-muted-foreground text-xs font-semibold uppercase">Estimated typing time saved</h3>
+            <p className="mt-1.5 mb-0 text-xl font-bold">{formatDuration(metrics.estimatedTypingTimeSavedMs)}</p>
+          </article>
+          <article className="border border-border rounded-2xl bg-white/[0.03] p-3">
+            <h3 className="m-0 text-muted-foreground text-xs font-semibold uppercase">Avg words / session</h3>
+            <p className="mt-1.5 mb-0 text-xl font-bold">{metrics.averageWordsPerSession.toFixed(1)}</p>
+          </article>
         </div>
-        {visibleWords.length === 0 ? (
-          <p className="muted">{emptyMessage}</p>
-        ) : (
-          <ul className="word-chip-list" aria-label="Top spoken words">
-            {visibleWords.map((item) => (
-              <li key={item.word} className="word-chip">
-                <span>{item.word}</span>
-                <em>{item.count}</em>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
-    </section>
+
+        <div>
+          <div className="flex items-center justify-between gap-3 flex-wrap">
+            <strong>Top words</strong>
+            <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <Switch
+                id="hide-common-words"
+                aria-label="Hide common words"
+                checked={hideCommonWords}
+                onCheckedChange={setHideCommonWords}
+              />
+              <Label htmlFor="hide-common-words">Hide common words</Label>
+            </div>
+          </div>
+          {visibleWords.length === 0 ? (
+            <p className="text-muted-foreground mt-2">{emptyMessage}</p>
+          ) : (
+            <ul className="flex flex-wrap gap-2 list-none m-0 mt-2 p-0" aria-label="Top spoken words">
+              {visibleWords.map((item) => (
+                <li key={item.word}>
+                  <Badge variant="secondary" className="gap-1.5">
+                    <span>{item.word}</span>
+                    <em className="text-muted-foreground not-italic">{item.count}</em>
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
