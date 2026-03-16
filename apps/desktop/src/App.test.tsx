@@ -36,9 +36,9 @@ const defaultPermissions: PermissionStatus = {
 
 const defaultModelStatus: ModelStatus = {
   installed: true,
-  bundledModel: "base_en",
+  bundledModels: ["base_en", "small_en"],
   activeModel: "base_en",
-  installedModels: ["base_en"],
+  installedModels: ["base_en", "small_en"],
   downloadTarget: null,
   downloading: false,
   progress: null,
@@ -361,30 +361,11 @@ describe("App", () => {
     });
   });
 
-  it("downloads the small speech model and switches to it", async () => {
-    const getModelStatusSpy = vi.spyOn(desktop, "getModelStatus");
-    getModelStatusSpy.mockReset();
-    getModelStatusSpy
-      .mockResolvedValueOnce(defaultModelStatus)
-      .mockResolvedValueOnce({
-        ...defaultModelStatus,
-        installedModels: ["base_en", "small_en"],
-      })
-      .mockResolvedValueOnce({
-        ...defaultModelStatus,
-        activeModel: "small_en",
-        installedModels: ["base_en", "small_en"],
-      });
-    const downloadModelSpy = vi.spyOn(desktop, "downloadModel").mockResolvedValue(undefined);
-
+  it("switches to the bundled small speech model", async () => {
     render(<App />);
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Download small model (~488 MB)" }),
-    );
-
-    await waitFor(() => {
-      expect(downloadModelSpy).toHaveBeenCalledWith("small_en");
+    fireEvent.change(await screen.findByLabelText("Speech model"), {
+      target: { value: "small_en" },
     });
 
     await waitFor(() => {
@@ -396,33 +377,6 @@ describe("App", () => {
     await waitFor(() => {
       expect(screen.getByLabelText("Speech model")).toHaveValue("small_en");
     });
-  });
-
-  it("keeps base selected when the small speech model download fails", async () => {
-    const getModelStatusSpy = vi.spyOn(desktop, "getModelStatus");
-    getModelStatusSpy.mockReset();
-    getModelStatusSpy
-      .mockResolvedValueOnce(defaultModelStatus)
-      .mockResolvedValueOnce({
-        ...defaultModelStatus,
-        error: "network down",
-      });
-    vi.spyOn(desktop, "downloadModel").mockRejectedValue(new Error("network down"));
-
-    render(<App />);
-
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Download small model (~488 MB)" }),
-    );
-
-    await waitFor(() => {
-      expect(screen.getByText("network down")).toBeVisible();
-    });
-
-    expect(screen.getByLabelText("Speech model")).toHaveValue("base_en");
-    expect(desktop.updateSettings).not.toHaveBeenCalledWith(
-      expect.objectContaining({ speechModel: "small_en" }),
-    );
   });
 
   it("persists the startup model warm-up preference from settings", async () => {

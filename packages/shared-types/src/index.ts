@@ -106,7 +106,7 @@ export interface CleanupResponse {
 
 export interface ModelStatus {
   installed: boolean;
-  bundledModel: SpeechModel;
+  bundledModels: SpeechModel[];
   activeModel: SpeechModel;
   installedModels: SpeechModel[];
   downloadTarget?: SpeechModel | null;

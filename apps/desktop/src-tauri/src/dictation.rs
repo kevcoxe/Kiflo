@@ -14,7 +14,7 @@ use whisper_rs::{FullParams, SamplingStrategy, WhisperContext, WhisperContextPar
 
 use crate::{
     models::{CleanupResponse, DictationMode, ModelStatus, SpeechModel, TranscriptionResponse},
-    whisper_models::{all_models, bundled_model, find_model, is_known_model_file, WhisperModelSpec},
+    whisper_models::{all_models, bundled_models, find_model, is_known_model_file, WhisperModelSpec},
 };
 
 const MODEL_LANGUAGE: &str = "en";
@@ -221,7 +221,7 @@ pub fn get_model_status(
 
     Ok(ModelStatus {
         installed: installed_models.contains(&active_model),
-        bundled_model: bundled_model().id,
+        bundled_models: bundled_models().iter().map(|spec| spec.id).collect(),
         active_model,
         installed_models,
         download_target: state.download_target,
@@ -1068,7 +1068,7 @@ fn ensure_model_available(
     }
 
     let source_model = bundled_model_source_path(resource_dir, model)
-        .ok_or_else(missing_bundled_model_error)?;
+        .ok_or_else(|| missing_bundled_model_error(model))?;
 
     install_bundled_model(app_data_dir, &source_model, spec)
 }
@@ -1272,16 +1272,16 @@ fn model_availability_error(
     if model_is_available(app_data_dir, resource_dir, model) {
         None
     } else if find_model(model).bundled {
-        Some(missing_bundled_model_error())
+        Some(missing_bundled_model_error(model))
     } else {
         Some(optional_model_install_error(model))
     }
 }
 
-fn missing_bundled_model_error() -> String {
+fn missing_bundled_model_error(model: SpeechModel) -> String {
     format!(
         "This build does not include the bundled whisper.cpp model `{}`. Run `npm run prepare:whisper-assets` before `tauri dev` or `tauri build` so the model is packaged into the desktop app.",
-        bundled_model().file_name
+        find_model(model).file_name
     )
 }
 
@@ -1554,12 +1554,13 @@ mod tests {
     }
 
     #[test]
-    fn model_status_reports_bundled_base_by_default() {
+    fn model_status_reports_bundled_models_by_default() {
         let runtime = Mutex::new(ModelRuntimeState::default());
         let root = temp_root("status-base");
         let app_data_dir = root.join("app-data");
         let resource_dir = root.join("resources");
         write_bundled_model_resource(&resource_dir, SpeechModel::BaseEn, b"base model");
+        write_bundled_model_resource(&resource_dir, SpeechModel::SmallEn, b"small model");
 
         let status = get_model_status(
             &app_data_dir,
@@ -1570,9 +1571,15 @@ mod tests {
         .unwrap();
 
         assert!(status.installed);
-        assert_eq!(status.bundled_model, SpeechModel::BaseEn);
+        assert_eq!(
+            status.bundled_models,
+            vec![SpeechModel::BaseEn, SpeechModel::SmallEn]
+        );
         assert_eq!(status.active_model, SpeechModel::BaseEn);
-        assert_eq!(status.installed_models, vec![SpeechModel::BaseEn]);
+        assert_eq!(
+            status.installed_models,
+            vec![SpeechModel::BaseEn, SpeechModel::SmallEn]
+        );
         assert!(status.download_target.is_none());
         assert!(!status.downloading);
 
@@ -1580,7 +1587,7 @@ mod tests {
     }
 
     #[test]
-    fn model_status_lists_optional_small_when_present() {
+    fn model_status_lists_small_when_present() {
         let runtime = Mutex::new(ModelRuntimeState::default());
         let root = temp_root("status-small");
         let app_data_dir = root.join("app-data");
@@ -1637,11 +1644,17 @@ mod tests {
     }
 
     #[test]
-    fn optional_small_model_reports_download_prompt_when_missing() {
+    fn bundled_small_model_reports_missing_model_assets() {
         let message =
-            model_availability_error(Path::new("/tmp/tator-missing-small-model"), None, SpeechModel::SmallEn)
-                .unwrap();
-        assert!(message.contains("Download the roughly 488 MB model from Settings"));
+            model_availability_error(Path::new("/tmp/tator-missing-small-model"), None, SpeechModel::SmallEn);
+
+        if resolve_dev_bundled_model(SpeechModel::SmallEn).is_some() {
+            assert!(message.is_none());
+        } else {
+            let message = message.unwrap();
+            assert!(message.contains("bundled whisper.cpp model"));
+            assert!(message.contains(&find_model(SpeechModel::SmallEn).file_name));
+        }
     }
 
     #[test]

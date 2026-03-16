@@ -34,11 +34,15 @@ pub fn find_model(model: SpeechModel) -> &'static WhisperModelSpec {
         .unwrap_or_else(|| panic!("missing whisper.cpp model metadata for {:?}", model))
 }
 
-pub fn bundled_model() -> &'static WhisperModelSpec {
-    all_models()
+pub fn bundled_models() -> Vec<&'static WhisperModelSpec> {
+    let bundled = all_models()
         .iter()
-        .find(|spec| spec.bundled)
-        .expect("whisper model catalog should define one bundled model")
+        .filter(|spec| spec.bundled)
+        .collect::<Vec<_>>();
+    if bundled.is_empty() {
+        panic!("whisper model catalog should define at least one bundled model");
+    }
+    bundled
 }
 
 pub fn is_known_model_file(file_name: &str) -> bool {

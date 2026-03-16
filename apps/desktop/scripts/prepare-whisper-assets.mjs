@@ -20,13 +20,11 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const bundledModelDir = path.resolve(scriptDir, "..", "src-tauri", "target", "bundled-whisper-model");
 const catalogPath = path.resolve(scriptDir, "..", "src-tauri", "resources", "whisper-models.json");
 const modelCatalog = JSON.parse(readFileSync(catalogPath, "utf8"));
-const bundledModel = modelCatalog.find((entry) => entry.bundled);
+const bundledModels = modelCatalog.filter((entry) => entry.bundled);
 
-if (!bundledModel) {
-  throw new Error(`No bundled whisper.cpp model was defined in ${catalogPath}.`);
+if (bundledModels.length === 0) {
+  throw new Error(`No bundled whisper.cpp models were defined in ${catalogPath}.`);
 }
-
-const { id: modelId, fileName: modelFileName, url: modelUrl, sha1: modelSha1 } = bundledModel;
 
 function sha1ForFile(filePath) {
   return new Promise((resolve, reject) => {
@@ -38,13 +36,13 @@ function sha1ForFile(filePath) {
   });
 }
 
-async function verifyExistingModel(modelPath) {
+async function verifyExistingModel(modelPath, expectedSha1) {
   if (!existsSync(modelPath)) {
     return false;
   }
 
   const digest = await sha1ForFile(modelPath);
-  if (digest !== modelSha1) {
+  if (digest !== expectedSha1) {
     rmSync(modelPath, { force: true });
     return false;
   }
@@ -52,7 +50,7 @@ async function verifyExistingModel(modelPath) {
   return true;
 }
 
-async function downloadModel(modelPath) {
+async function downloadModel(modelPath, modelUrl, modelFileName, modelSha1) {
   const tempPath = `${modelPath}.download`;
   rmSync(tempPath, { force: true });
 
@@ -75,12 +73,17 @@ async function downloadModel(modelPath) {
 }
 
 function removeStaleModels() {
+  const bundledFileNames = new Set(bundledModels.map((entry) => entry.fileName));
   for (const entry of readdirSync(bundledModelDir, { withFileTypes: true })) {
     if (!entry.isFile()) {
       continue;
     }
 
-    if (!entry.name.startsWith("ggml-") || !entry.name.endsWith(".bin") || entry.name === modelFileName) {
+    if (
+      !entry.name.startsWith("ggml-") ||
+      !entry.name.endsWith(".bin") ||
+      bundledFileNames.has(entry.name)
+    ) {
       continue;
     }
 
@@ -90,30 +93,28 @@ function removeStaleModels() {
 
 async function main() {
   mkdirSync(bundledModelDir, { recursive: true });
-
-  const modelPath = path.join(bundledModelDir, modelFileName);
   const manifestPath = path.join(bundledModelDir, "manifest.json");
   removeStaleModels();
 
-  if (!(await verifyExistingModel(modelPath))) {
-    console.log(`Downloading bundled whisper.cpp model to ${modelPath}`);
-    await downloadModel(modelPath);
+  const manifest = [];
+  for (const model of bundledModels) {
+    const modelPath = path.join(bundledModelDir, model.fileName);
+
+    if (!(await verifyExistingModel(modelPath, model.sha1))) {
+      console.log(`Downloading bundled whisper.cpp model to ${modelPath}`);
+      await downloadModel(modelPath, model.url, model.fileName, model.sha1);
+    }
+
+    manifest.push({
+      id: model.id,
+      fileName: model.fileName,
+      sha1: model.sha1,
+      sizeBytes: statSync(modelPath).size,
+      source: model.url,
+    });
   }
 
-  writeFileSync(
-    manifestPath,
-    JSON.stringify(
-      {
-        id: modelId,
-        fileName: modelFileName,
-        sha1: modelSha1,
-        sizeBytes: statSync(modelPath).size,
-        source: modelUrl,
-      },
-      null,
-      2,
-    ),
-  );
+  writeFileSync(manifestPath, JSON.stringify({ models: manifest }, null, 2));
 
   console.log(`Prepared bundled whisper.cpp assets in ${bundledModelDir}`);
 }

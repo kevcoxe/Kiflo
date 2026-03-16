@@ -87,9 +87,9 @@ const DEFAULT_PERMISSIONS: PermissionStatus = {
 
 const DEFAULT_MODEL_STATUS: ModelStatus = {
   installed: true,
-  bundledModel: "base_en",
+  bundledModels: ["base_en", "small_en"],
   activeModel: "base_en",
-  installedModels: ["base_en"],
+  installedModels: ["base_en", "small_en"],
   downloadTarget: null,
   downloading: false,
   progress: null,
@@ -738,7 +738,7 @@ export function useDictationController() {
       setError(
         describeError(
           downloadError,
-          "Unable to download the optional local speech model.",
+          "Unable to prepare the local speech model.",
         ),
       );
     } finally {

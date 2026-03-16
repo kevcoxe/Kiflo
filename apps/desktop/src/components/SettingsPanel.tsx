@@ -14,7 +14,6 @@ interface SettingsPanelProps {
   settings: Settings;
   modelStatus: ModelStatus;
   onChange: (settings: Settings) => void;
-  onDownloadModel: (model: SpeechModel) => void;
 }
 
 interface DictionaryRow {
@@ -29,7 +28,6 @@ export function SettingsPanel({
   settings,
   modelStatus,
   onChange,
-  onDownloadModel,
 }: SettingsPanelProps) {
   const previousCueVolumeRef = useRef(
     settings.recordingCueVolume > 0
@@ -101,9 +99,6 @@ export function SettingsPanel({
     (model) =>
       modelStatus.installedModels.includes(model) || settings.speechModel === model,
   );
-  const smallModelInstalled = modelStatus.installedModels.includes("small_en");
-  const downloadingSmallModel =
-    modelStatus.downloading && modelStatus.downloadTarget === "small_en";
 
   return (
     <section className="panel">
@@ -171,8 +166,8 @@ export function SettingsPanel({
       <div className="field">
         <span>Speech model</span>
         <p className="field-help muted">
-          Base English is bundled with the app. Small English is more accurate, but
-          it adds a larger local download and uses more disk space.
+          Base English and Small English are bundled with the app. Small English is
+          more accurate, but it uses more disk space and takes longer to warm up.
         </p>
         <select
           aria-label="Speech model"
@@ -184,30 +179,10 @@ export function SettingsPanel({
         >
           {selectableSpeechModels.map((model) => (
             <option key={model} value={model}>
-              {labelForSpeechModel(model, modelStatus.bundledModel)}
+              {labelForSpeechModel(model, modelStatus.bundledModels)}
             </option>
           ))}
         </select>
-        {!smallModelInstalled ? (
-          <>
-            <p className="field-help muted">
-              Download Small English for higher accuracy. It adds about 488 MB to app
-              data.
-            </p>
-            <div className="dictionary-actions">
-              <button
-                className="secondary-button"
-                disabled={modelStatus.downloading}
-                onClick={() => onDownloadModel("small_en")}
-                type="button"
-              >
-                {downloadingSmallModel
-                  ? "Downloading small model..."
-                  : "Download small model (~488 MB)"}
-              </button>
-            </div>
-          </>
-        ) : null}
       </div>
       <div className="field">
         <span id="custom-dictionary-label">Custom dictionary</span>
@@ -387,9 +362,9 @@ export function SettingsPanel({
   );
 }
 
-function labelForSpeechModel(model: SpeechModel, bundledModel: SpeechModel): string {
+function labelForSpeechModel(model: SpeechModel, bundledModels: SpeechModel[]): string {
   const baseLabel = model === "base_en" ? "Base English" : "Small English";
-  return model === bundledModel ? `${baseLabel} (bundled)` : baseLabel;
+  return bundledModels.includes(model) ? `${baseLabel} (bundled)` : baseLabel;
 }
 
 function createDictionaryRow(nextDictionaryRowId: MutableRefObject<number>): DictionaryRow {

@@ -173,7 +173,7 @@ pub struct CleanupResponse {
 #[serde(rename_all = "camelCase")]
 pub struct ModelStatus {
     pub installed: bool,
-    pub bundled_model: SpeechModel,
+    pub bundled_models: Vec<SpeechModel>,
     pub active_model: SpeechModel,
     pub installed_models: Vec<SpeechModel>,
     pub download_target: Option<SpeechModel>,
