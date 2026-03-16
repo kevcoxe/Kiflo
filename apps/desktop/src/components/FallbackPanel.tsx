@@ -1,3 +1,6 @@
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+
 interface FallbackPanelProps {
   text: string;
   onCopy: () => void;
@@ -10,19 +13,21 @@ export function FallbackPanel({
   onRetry,
 }: FallbackPanelProps) {
   return (
-    <section aria-label="Fallback paste panel" className="panel fallback-panel">
-      <div className="panel-header">
-        <h2>Paste fallback</h2>
-        <span>Accessibility or paste failed</span>
-      </div>
-      <pre>{text}</pre>
-      <div className="button-row">
-        <button className="secondary-button" onClick={onCopy} type="button">
+    <section aria-label="Fallback paste panel">
+      <Alert variant="destructive" className="mb-3">
+        <AlertTitle>Paste fallback</AlertTitle>
+        <AlertDescription>Accessibility or paste failed</AlertDescription>
+      </Alert>
+      <pre className="overflow-x-auto rounded-2xl bg-black/25 mb-3 p-3.5 whitespace-pre-wrap text-sm">
+        {text}
+      </pre>
+      <div className="flex flex-wrap gap-3">
+        <Button variant="outline" onClick={onCopy} type="button">
           Copy
-        </button>
-        <button className="primary-button" onClick={onRetry} type="button">
+        </Button>
+        <Button onClick={onRetry} type="button">
           Retry Paste
-        </button>
+        </Button>
       </div>
     </section>
   );

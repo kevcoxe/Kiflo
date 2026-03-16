@@ -1,6 +1,12 @@
 import { DICTATION_MODES } from "@tator/shared-types";
 import type { KeyboardEvent, PointerEvent } from "react";
 import { useEffect, useState } from "react";
+import { Loader2 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import { FallbackPanel } from "@/components/FallbackPanel";
 import { HistoryList } from "@/components/HistoryList";
 import { MetricsDashboard } from "@/components/MetricsDashboard";
@@ -22,6 +28,11 @@ function statusLabel(status: ReturnType<typeof useDictationController>["status"]
     case "error":
       return "Attention Needed";
   }
+}
+
+function statusBadgeVariant(status: ReturnType<typeof useDictationController>["status"]) {
+  if (status === "recording" || status === "error") return "destructive" as const;
+  return "secondary" as const;
 }
 
 export default function App() {
@@ -121,137 +132,154 @@ export default function App() {
   }
 
   return (
-    <main className="app-shell">
-      <section className="panel control-bar">
-        <div className={`status-badge status-${controller.status}`}>
-          {statusLabel(controller.status)}
-        </div>
-        <div className="button-row">
-          <button
-            className={`primary-button ${
-              controller.status === "processing" ? "is-processing" : ""
-            }`}
-            disabled={recordButtonDisabled}
-            onClick={() => {
-              if (!isHoldMode) {
-                void controller.toggleRecording();
-              }
-            }}
-            onKeyDown={handleKeyDown}
-            onKeyUp={handleKeyUp}
-            onMouseDown={handleMousePressStart}
-            onMouseUp={handleMousePressStop}
-            onPointerCancel={handlePressStop}
-            onPointerDown={handlePressStart}
-            onPointerUp={handlePressStop}
-            type="button"
-          >
-            {controller.status === "processing" ? (
-              <>
-                <span aria-hidden="true" className="button-spinner" />
-                <span>Processing...</span>
-              </>
-            ) : isHoldMode ? (
-              controller.status === "recording"
-                ? "Release to Transcribe"
-                : "Hold to Record"
-            ) : controller.status === "recording" ? (
-              "Stop Recording"
-            ) : (
-              "Start Recording"
+    <main className="flex flex-col gap-4 mx-auto max-w-[920px] p-5">
+      <Card>
+        <CardContent className="pt-4 flex flex-wrap items-center gap-3">
+          <Badge
+            variant={statusBadgeVariant(controller.status)}
+            className={cn(
+              controller.status === "idle" || controller.status === "success"
+                ? "bg-green-900/40 text-green-300 border-green-800/40"
+                : undefined,
             )}
-          </button>
-          <select
-            className="mode-select"
-            onChange={(event) =>
-              controller.setMode(event.target.value as (typeof DICTATION_MODES)[number])
-            }
-            value={controller.mode}
           >
-            {DICTATION_MODES.map((mode) => (
-              <option key={mode} value={mode}>
-                {mode}
-              </option>
-            ))}
-          </select>
-        </div>
-      </section>
-
-      <section className="panel">
-        <div className="panel-header">
-          <h2>Permissions</h2>
-          {permissionsReady ? (
-            <button
-              aria-controls="permissions-panel-body"
-              aria-expanded={!permissionsCollapsed}
-              className="panel-toggle"
-              onClick={() => setPermissionsExpanded((current) => !current)}
+            {statusLabel(controller.status)}
+          </Badge>
+          <div className="flex flex-wrap gap-3 ml-auto">
+            <Button
+              disabled={recordButtonDisabled}
+              variant={controller.status === "processing" ? "secondary" : "default"}
+              onClick={() => {
+                if (!isHoldMode) {
+                  void controller.toggleRecording();
+                }
+              }}
+              onKeyDown={handleKeyDown}
+              onKeyUp={handleKeyUp}
+              onMouseDown={handleMousePressStart}
+              onMouseUp={handleMousePressStop}
+              onPointerCancel={handlePressStop}
+              onPointerDown={handlePressStart}
+              onPointerUp={handlePressStop}
               type="button"
             >
-              {permissionsCollapsed ? "Show permissions details" : "Hide permissions details"}
-            </button>
-          ) : null}
-        </div>
-        {permissionsCollapsed ? (
-          <p className="muted permissions-summary">
-            Required permissions are granted.
-          </p>
-        ) : (
-          <div id="permissions-panel-body">
-            <dl className="permission-grid">
-              <div>
-                <dt>Microphone</dt>
-                <dd>{controller.permissions.microphone}</dd>
-              </div>
-              <div>
-                <dt>Accessibility</dt>
-                <dd>{controller.permissions.accessibility}</dd>
-              </div>
-            </dl>
-            {!permissionsReady ? (
-              <div className="result-block permissions-callout">
-                <div className="permissions-copy">
-                  <strong>Permissions required to continue</strong>
-                  <p>
-                    Grant the required system permissions before using dictation.
-                    Open the relevant system settings pages, then refresh once access has
-                    been granted.
-                  </p>
-                </div>
-                <div className="permissions-actions">
-                  {microphoneGranted ? null : (
-                    <button
-                      className="primary-button"
-                      onClick={() => void controller.openMicrophoneSystemSettings()}
-                      type="button"
-                    >
-                      Open Microphone Settings
-                    </button>
-                  )}
-                  {accessibilityGranted ? null : (
-                    <button
-                      className="primary-button"
-                      onClick={() => void controller.openAccessibilitySystemSettings()}
-                      type="button"
-                    >
-                      Open Accessibility Settings
-                    </button>
-                  )}
-                  <button
-                    className="mode-select"
-                    onClick={() => void controller.refreshPermissions()}
-                    type="button"
-                  >
-                    Refresh Permissions
-                  </button>
-                </div>
-              </div>
+              {controller.status === "processing" ? (
+                <>
+                  <Loader2 className="animate-spin" />
+                  <span>Processing...</span>
+                </>
+              ) : isHoldMode ? (
+                controller.status === "recording"
+                  ? "Release to Transcribe"
+                  : "Hold to Record"
+              ) : controller.status === "recording" ? (
+                "Stop Recording"
+              ) : (
+                "Start Recording"
+              )}
+            </Button>
+            <select
+              className={cn(
+                "flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm",
+                "ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              )}
+              onChange={(event) =>
+                controller.setMode(event.target.value as (typeof DICTATION_MODES)[number])
+              }
+              value={controller.mode}
+            >
+              {DICTATION_MODES.map((mode) => (
+                <option key={mode} value={mode}>
+                  {mode}
+                </option>
+              ))}
+            </select>
+          </div>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardContent className="pt-4">
+          <div className="flex items-baseline justify-between gap-4 mb-3">
+            <h2 className="text-base font-semibold leading-none tracking-tight m-0">Permissions</h2>
+            {permissionsReady ? (
+              <button
+                aria-controls="permissions-panel-body"
+                aria-expanded={!permissionsCollapsed}
+                className="text-sm text-muted-foreground hover:text-foreground border border-border rounded-full bg-white/[0.06] px-3 py-1.5"
+                onClick={() => setPermissionsExpanded((current) => !current)}
+                type="button"
+              >
+                {permissionsCollapsed ? "Show permissions details" : "Hide permissions details"}
+              </button>
             ) : null}
           </div>
-        )}
-      </section>
+          {permissionsCollapsed ? (
+            <p className="text-muted-foreground m-0">Required permissions are granted.</p>
+          ) : (
+            <div id="permissions-panel-body">
+              <dl className="grid gap-3 m-0">
+                <div>
+                  <dt className="text-muted-foreground text-sm">Microphone</dt>
+                  <dd className="mt-0.5 font-bold m-0">{controller.permissions.microphone}</dd>
+                </div>
+                <div>
+                  <dt className="text-muted-foreground text-sm">Accessibility</dt>
+                  <dd className="mt-0.5 font-bold m-0">{controller.permissions.accessibility}</dd>
+                </div>
+              </dl>
+              {!permissionsReady ? (
+                <Alert className="mt-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-4">
+                    <div>
+                      <AlertTitle>Permissions required to continue</AlertTitle>
+                      <AlertDescription>
+                        Grant the required system permissions before using dictation.
+                        Open the relevant system settings pages, then refresh once access has
+                        been granted.
+                      </AlertDescription>
+                    </div>
+                    <div className="grid gap-3 items-start">
+                      {microphoneGranted ? null : (
+                        <Button
+                          onClick={() => void controller.openMicrophoneSystemSettings()}
+                          type="button"
+                          className="w-full"
+                        >
+                          Open Microphone Settings
+                        </Button>
+                      )}
+                      {accessibilityGranted ? null : (
+                        <Button
+                          onClick={() => void controller.openAccessibilitySystemSettings()}
+                          type="button"
+                          className="w-full"
+                        >
+                          Open Accessibility Settings
+                        </Button>
+                      )}
+                      <Button
+                        variant="outline"
+                        onClick={() => void controller.refreshPermissions()}
+                        type="button"
+                        className="w-full"
+                      >
+                        Refresh Permissions
+                      </Button>
+                    </div>
+                  </div>
+                </Alert>
+              ) : null}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-      {controller.error ? <p className="error-banner">{controller.error}</p> : null}
+      {controller.error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{controller.error}</AlertDescription>
+        </Alert>
+      ) : null}
 
       {controller.fallbackText ? (
         <FallbackPanel
