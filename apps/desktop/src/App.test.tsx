@@ -5,7 +5,7 @@ import type {
   ModelStatus,
   PermissionStatus,
   Settings,
-} from "@tator/shared-types";
+} from "@kiflo/shared-types";
 import App from "./App";
 import * as desktop from "@/lib/desktop";
 import * as recordingCues from "@/lib/recording-cues";

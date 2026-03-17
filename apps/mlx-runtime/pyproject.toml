@@ -1,7 +1,7 @@
 [project]
-name = "tator-mlx-runtime"
+name = "kiflo-mlx-runtime"
 version = "0.1.0"
-description = "Python helper runtime dependencies for local MLX transcription in the Tator desktop app."
+description = "Python helper runtime dependencies for local MLX transcription in the Kiflo desktop app."
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "huggingface-hub>=0.32.0,<1.0.0",

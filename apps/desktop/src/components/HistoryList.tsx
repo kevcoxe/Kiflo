@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { FocusedEditorContext, HistoryRecord } from "@tator/shared-types";
+import type { FocusedEditorContext, HistoryRecord } from "@kiflo/shared-types";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface HistoryListProps {

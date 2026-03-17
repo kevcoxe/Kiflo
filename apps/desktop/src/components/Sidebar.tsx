@@ -20,7 +20,7 @@ export function Sidebar({ active, onSelect, permissionsReady = true }: SidebarPr
   return (
     <aside className="flex flex-col w-52 shrink-0 border-r border-border bg-card min-h-screen">
       <div className="px-4 py-5 border-b border-border">
-        <span className="text-base font-bold tracking-tight">Tator</span>
+        <span className="text-base font-bold tracking-tight">Kiflo</span>
       </div>
       <nav className="flex flex-col gap-1 p-2 flex-1">
         {NAV_ITEMS.map(({ id, label, icon: Icon }) => (

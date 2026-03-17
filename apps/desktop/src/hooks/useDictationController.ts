@@ -10,7 +10,7 @@ import type {
   PermissionStatus,
   SpeechModel,
   Settings,
-} from "@tator/shared-types";
+} from "@kiflo/shared-types";
 import {
   captureClipboard,
   cleanupText,

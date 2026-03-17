@@ -1,5 +1,5 @@
 {
-  "name": "tator",
+  "name": "kiflo",
   "version": "0.3.1",
   "private": true,
   "type": "module",
@@ -9,16 +9,16 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces --if-present",
-    "build:desktop:linux": "npm run tauri:build --workspace @tator/desktop",
+    "build:desktop:linux": "npm run tauri:build --workspace @kiflo/desktop",
     "build:desktop:linux:docker": "bash ./scripts/build-desktop-linux-docker.sh",
-    "build:desktop:macos": "npm run tauri:build --workspace @tator/desktop",
-    "dev:desktop": "npm run dev --workspace @tator/desktop",
+    "build:desktop:macos": "npm run tauri:build --workspace @kiflo/desktop",
+    "dev:desktop": "npm run dev --workspace @kiflo/desktop",
     "debug:desktop:release:local": "bash ./scripts/debug-desktop-release-local.sh",
     "release:prep": "node ./scripts/release-prep.mjs",
     "sync:desktop-version": "node ./scripts/sync-desktop-version.mjs",
-    "tauri:dev": "npm run tauri:dev --workspace @tator/desktop",
-    "test": "npm run test --workspace @tator/desktop && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
-    "test:desktop": "npm run test --workspace @tator/desktop",
+    "tauri:dev": "npm run tauri:dev --workspace @kiflo/desktop",
+    "test": "npm run test --workspace @kiflo/desktop && cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
+    "test:desktop": "npm run test --workspace @kiflo/desktop",
     "test:rust": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml"
   }
 }

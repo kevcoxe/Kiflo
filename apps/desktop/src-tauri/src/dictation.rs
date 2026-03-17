@@ -48,7 +48,7 @@ const EXCITED_OPENERS: &[&str] = &[
     "yay",
 ];
 const EXCITED_PREFIXES: &[&str] = &["let's go", "sounds good", "so excited", "thank you"];
-const FILE_MENTION_PLACEHOLDER_PREFIX: &str = "__TATOR_FILE_";
+const FILE_MENTION_PLACEHOLDER_PREFIX: &str = "__KIFLO_FILE_";
 const FILE_INTENT_CUES: &[&str] = &["open", "edit", "read", "attach", "use", "check"];
 const FILE_INTENT_SKIP_WORDS: &[&str] = &["a", "an", "the", "this", "that", "my", "your", "our"];
 const FILE_MENTION_BOUNDARY_WORDS: &[&str] = &[
@@ -550,7 +550,7 @@ fn load_whisper_context(model_path: &Path) -> Result<WhisperContext, String> {
 }
 
 fn selected_provider() -> AsrProviderKind {
-    match env::var("TATOR_INTERNAL_ASR_PROVIDER").ok().as_deref() {
+    match env::var("KIFLO_INTERNAL_ASR_PROVIDER").ok().as_deref() {
         Some("mlx_whisper") | Some("whisper_cpp") => AsrProviderKind::WhisperCpp,
         Some("mock") => AsrProviderKind::Mock,
         _ if cfg!(debug_assertions) => AsrProviderKind::Mock,
@@ -2346,18 +2346,18 @@ mod tests {
 
     #[test]
     fn selected_provider_accepts_whisper_cpp_and_legacy_mlx_names() {
-        env::set_var("TATOR_INTERNAL_ASR_PROVIDER", "whisper_cpp");
+        env::set_var("KIFLO_INTERNAL_ASR_PROVIDER", "whisper_cpp");
         assert_eq!(selected_provider(), AsrProviderKind::WhisperCpp);
 
-        env::set_var("TATOR_INTERNAL_ASR_PROVIDER", "mlx_whisper");
+        env::set_var("KIFLO_INTERNAL_ASR_PROVIDER", "mlx_whisper");
         assert_eq!(selected_provider(), AsrProviderKind::WhisperCpp);
 
-        env::remove_var("TATOR_INTERNAL_ASR_PROVIDER");
+        env::remove_var("KIFLO_INTERNAL_ASR_PROVIDER");
     }
 
     #[test]
     fn bundled_model_availability_error_reports_missing_model_assets() {
-        let app_data_dir = Path::new("/tmp/tator-missing-model-app-data");
+        let app_data_dir = Path::new("/tmp/kiflo-missing-model-app-data");
         let message = model_availability_error(app_data_dir, None, SpeechModel::BaseEn);
 
         if resolve_dev_bundled_model(SpeechModel::BaseEn).is_some() {
@@ -2372,7 +2372,7 @@ mod tests {
     #[test]
     fn bundled_small_model_reports_missing_model_assets() {
         let message = model_availability_error(
-            Path::new("/tmp/tator-missing-small-model"),
+            Path::new("/tmp/kiflo-missing-small-model"),
             None,
             SpeechModel::SmallEn,
         );
@@ -2507,7 +2507,7 @@ mod tests {
     }
 
     fn temp_root(label: &str) -> PathBuf {
-        env::temp_dir().join(format!("tator-{label}-{}", Uuid::new_v4()))
+        env::temp_dir().join(format!("kiflo-{label}-{}", Uuid::new_v4()))
     }
 
     fn write_bundled_model_resource(resource_dir: &Path, model: SpeechModel, bytes: &[u8]) {

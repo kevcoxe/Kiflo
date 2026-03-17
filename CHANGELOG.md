@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the shipped Tator desktop app are documented in this file.
+All notable changes to the shipped Kiflo desktop app are documented in this file.
 
 The format is based on Keep a Changelog and adapted to this repository's tag-driven release workflow.
 
@@ -8,10 +8,10 @@ The format is based on Keep a Changelog and adapted to this repository's tag-dri
 
 ### macOS Install Note
 
-This build is not notarized. After dragging Tator to `/Applications`, run the following command in Terminal before opening the app:
+This build is not notarized. After dragging Kiflo to `/Applications`, run the following command in Terminal before opening the app:
 
 ```
-xattr -dr com.apple.quarantine /Applications/Tator.app
+xattr -dr com.apple.quarantine /Applications/Kiflo.app
 ```
 
 ### Changed

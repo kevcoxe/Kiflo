@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { HistoryMetrics } from "@tator/shared-types";
+import type { HistoryMetrics } from "@kiflo/shared-types";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";

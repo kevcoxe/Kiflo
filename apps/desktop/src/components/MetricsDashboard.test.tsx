@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import type { HistoryMetrics } from "@tator/shared-types";
+import type { HistoryMetrics } from "@kiflo/shared-types";
 import { MetricsDashboard } from "./MetricsDashboard";
 
 const metrics: HistoryMetrics = {

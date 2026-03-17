@@ -1,5 +1,5 @@
 {
-  "name": "@tator/shared-types",
+  "name": "@kiflo/shared-types",
   "version": "0.3.0",
   "private": true,
   "type": "module",

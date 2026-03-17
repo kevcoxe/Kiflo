@@ -22,7 +22,7 @@ import type {
   SpeechModel,
   Settings,
   TranscriptionResponse,
-} from "@tator/shared-types";
+} from "@kiflo/shared-types";
 
 function formatDesktopError(error: unknown): string {
   if (error instanceof Error && error.message) {

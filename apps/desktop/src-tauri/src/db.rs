@@ -725,7 +725,7 @@ mod tests {
     use super::*;
 
     fn temp_db_path() -> std::path::PathBuf {
-        env::temp_dir().join(format!("tator-test-{}.sqlite3", Uuid::new_v4()))
+        env::temp_dir().join(format!("kiflo-test-{}.sqlite3", Uuid::new_v4()))
     }
 
     #[test]

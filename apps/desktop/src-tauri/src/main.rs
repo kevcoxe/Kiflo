@@ -387,7 +387,7 @@ fn interaction_mode_for_menu_item(menu_id: &str) -> Option<&'static str> {
 }
 
 fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<tauri::Wry>> {
-    let open = MenuItem::with_id(app, MENU_ITEM_OPEN, "Open Tator", true, None::<&str>)?;
+    let open = MenuItem::with_id(app, MENU_ITEM_OPEN, "Open Kiflo", true, None::<&str>)?;
     let toggle = MenuItem::with_id(
         app,
         MENU_ITEM_TOGGLE_RECORDING,
@@ -751,7 +751,7 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let mut tray = TrayIconBuilder::with_id(TRAY_ID)
         .menu(&menu)
-        .tooltip("Tator")
+        .tooltip("Kiflo")
         .show_menu_on_left_click(true)
         .on_menu_event(|app, event| match event.id().as_ref() {
             MENU_ITEM_OPEN => {
@@ -888,7 +888,7 @@ fn main() {
             let app_data_dir = app.path().app_data_dir()?;
             let resource_dir = resolve_resource_dir(app.handle());
             fs::create_dir_all(&app_data_dir)?;
-            let database_path = app_data_dir.join("tator.sqlite3");
+            let database_path = app_data_dir.join("kiflo.sqlite3");
             db::initialize(&database_path).map_err(std::io::Error::other)?;
             let settings = db::get_settings(&database_path).map_err(std::io::Error::other)?;
             app.manage(AppState::new(database_path, app_data_dir, resource_dir));
@@ -932,5 +932,5 @@ fn main() {
             hide_hud_command,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running tator desktop");
+        .expect("error while running kiflo desktop");
 }

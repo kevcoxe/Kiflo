@@ -1,7 +1,7 @@
 import { Sun, Moon, Monitor } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SidebarSection } from "@/components/Sidebar";
-import type { Settings } from "@tator/shared-types";
+import type { Settings } from "@kiflo/shared-types";
 
 const SECTION_LABELS: Record<SidebarSection, string> = {
   record: "Record",

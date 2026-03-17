@@ -19,7 +19,7 @@ export async function ensureTray(handlers: TrayHandlers): Promise<void> {
     items: [
       {
         id: "open",
-        text: "Open Tator",
+        text: "Open Kiflo",
         action: () => handlers.onShowWindow(),
       },
       {
@@ -38,7 +38,7 @@ export async function ensureTray(handlers: TrayHandlers): Promise<void> {
   const options: TrayIconOptions = {
     menu,
     menuOnLeftClick: true,
-    tooltip: "Tator",
+    tooltip: "Kiflo",
     action: (event) => {
       if (event.type === "Click") {
         handlers.onShowWindow();

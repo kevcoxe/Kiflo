@@ -9,7 +9,7 @@ import {
   type SpeechModel,
   type Settings,
   THEMES,
-} from "@tator/shared-types";
+} from "@kiflo/shared-types";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -343,7 +343,7 @@ export function SettingsPanel({
             label="Force supported editors to behave like composer fields"
           />
           <p className="text-sm text-muted-foreground m-0 pl-[52px]">
-            Use @mentions and Tab even when Tator cannot confirm the focused field is a
+            Use @mentions and Tab even when Kiflo cannot confirm the focused field is a
             chat/composer input.
           </p>
         </div>

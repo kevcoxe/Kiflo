@@ -40,7 +40,7 @@ pub fn create_hud_window(app: &AppHandle) -> Result<(), String> {
 
     let hud_window =
         WebviewWindowBuilder::new(app, HUD_WINDOW_LABEL, WebviewUrl::App("index.html".into()))
-            .title("Tator HUD")
+            .title("Kiflo HUD")
             .visible(false)
             .transparent(true)
             .decorations(false)

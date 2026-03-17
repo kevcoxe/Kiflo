@@ -1,4 +1,4 @@
-import { DICTATION_MODES } from "@tator/shared-types";
+import { DICTATION_MODES } from "@kiflo/shared-types";
 import type { KeyboardEvent, PointerEvent } from "react";
 import { useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";

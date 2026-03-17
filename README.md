@@ -1,6 +1,6 @@
-# Tator
+# Kiflo
 
-Tator is a desktop dictation app built as a Tauri app with local transcription and cleanup inside the app. The repository is organized as a small monorepo:
+Kiflo is a desktop dictation app built as a Tauri app with local transcription and cleanup inside the app. The repository is organized as a small monorepo:
 
 - `apps/desktop`: Tauri v2 + React/TypeScript desktop app.
 - `apps/mlx-runtime`: legacy Python MLX prototype kept for reference while the shipped app uses a native backend.
