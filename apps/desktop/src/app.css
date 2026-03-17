@@ -131,20 +131,20 @@ body.hud-window #root {
 @keyframes hud-pulse {
   0% {
     box-shadow:
-      0 0 0 0 rgba(255, 122, 99, 0.45),
-      0 0 18px rgba(255, 122, 99, 0.42);
+      0 0 0 0 rgba(0, 210, 240, 0.5),
+      0 0 18px rgba(0, 210, 240, 0.45);
   }
 
   70% {
     box-shadow:
-      0 0 0 12px rgba(255, 122, 99, 0),
-      0 0 24px rgba(255, 122, 99, 0.18);
+      0 0 0 12px rgba(0, 210, 240, 0),
+      0 0 24px rgba(0, 210, 240, 0.18);
   }
 
   100% {
     box-shadow:
-      0 0 0 0 rgba(255, 122, 99, 0),
-      0 0 18px rgba(255, 122, 99, 0.12);
+      0 0 0 0 rgba(0, 210, 240, 0),
+      0 0 18px rgba(0, 210, 240, 0.12);
   }
 }
 
@@ -181,12 +181,12 @@ body.hud-window #root {
   align-items: center;
   gap: 0.9rem;
   width: min(16rem, 100%);
-  border: 1px solid rgba(244, 239, 231, 0.12);
+  border: 1px solid rgba(0, 210, 240, 0.15);
   border-radius: 22px;
   background:
-    linear-gradient(135deg, rgba(17, 15, 13, 0.92), rgba(26, 22, 19, 0.88)),
-    radial-gradient(circle at top right, rgba(233, 141, 96, 0.18), transparent 42%);
-  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.28);
+    linear-gradient(135deg, rgba(9, 13, 26, 0.94), rgba(12, 18, 36, 0.90)),
+    radial-gradient(circle at top right, rgba(0, 210, 240, 0.14), transparent 42%);
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.35);
   padding: 0.9rem 1rem;
   backdrop-filter: blur(16px);
 }
@@ -198,8 +198,8 @@ body.hud-window #root {
   width: 2.35rem;
   height: 2.35rem;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  box-shadow: inset 0 0 0 1px rgba(244, 239, 231, 0.08);
+  background: rgba(0, 210, 240, 0.07);
+  box-shadow: inset 0 0 0 1px rgba(0, 210, 240, 0.12);
 }
 
 .hud-copy {
@@ -220,7 +220,7 @@ body.hud-window #root {
 }
 
 .hud-subtitle {
-  color: rgba(244, 239, 231, 0.72);
+  color: rgba(180, 220, 240, 0.72);
   font-size: 0.78rem;
 }
 
@@ -228,18 +228,18 @@ body.hud-window #root {
   width: 0.8rem;
   height: 0.8rem;
   border-radius: 999px;
-  background: #ff7a63;
+  background: #00d2f0;
   box-shadow:
-    0 0 0 0 rgba(255, 122, 99, 0.45),
-    0 0 18px rgba(255, 122, 99, 0.42);
+    0 0 0 0 rgba(0, 210, 240, 0.5),
+    0 0 18px rgba(0, 210, 240, 0.45);
   animation: hud-pulse 1.5s ease-out infinite;
 }
 
 .hud-spinner-ring {
   width: 1.05rem;
   height: 1.05rem;
-  border: 2px solid rgba(233, 141, 96, 0.24);
-  border-top-color: #ea8d60;
+  border: 2px solid rgba(0, 210, 240, 0.22);
+  border-top-color: #00d2f0;
   border-radius: 999px;
   animation: hud-spin 0.9s linear infinite;
 }
@@ -261,7 +261,7 @@ body.hud-window #root {
   width: 0.22rem;
   height: 100%;
   border-radius: 999px;
-  background: linear-gradient(180deg, #f2ba7f, #d65334);
+  background: linear-gradient(180deg, #00e5ff, #1a60ff);
   transform-origin: center bottom;
   transition: transform 120ms ease-out;
 }
@@ -275,7 +275,7 @@ body.hud-window #root {
   width: 0.36rem;
   height: 0.36rem;
   border-radius: 999px;
-  background: rgba(233, 141, 96, 0.88);
+  background: rgba(0, 210, 240, 0.88);
   animation: hud-bounce 0.9s ease-in-out infinite;
 }
 
@@ -288,11 +288,11 @@ body.hud-window #root {
 }
 
 .hud-phase-recording .hud-card {
-  border-color: rgba(214, 83, 52, 0.18);
+  border-color: rgba(0, 210, 240, 0.25);
 }
 
 .hud-phase-processing .hud-card {
-  border-color: rgba(233, 141, 96, 0.2);
+  border-color: rgba(0, 180, 220, 0.22);
 }
 
 .hud-phase-error .hud-card {
