@@ -7,6 +7,8 @@ const SECTION_LABELS: Record<SidebarSection, string> = {
   record: "Record",
   dashboard: "Dashboard",
   settings: "Settings",
+  "vibe-coding": "Vibe Coding",
+  dictionary: "Dictionary",
   permissions: "Permissions",
 };
 

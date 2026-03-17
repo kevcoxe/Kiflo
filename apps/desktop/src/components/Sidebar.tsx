@@ -1,12 +1,14 @@
-import { Mic, LayoutDashboard, Settings, Shield } from "lucide-react";
+import { Mic, LayoutDashboard, Settings, Shield, BookOpen, Hash } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type SidebarSection = "record" | "dashboard" | "settings" | "permissions";
+export type SidebarSection = "record" | "dashboard" | "settings" | "vibe-coding" | "dictionary" | "permissions";
 
 const NAV_ITEMS: { id: SidebarSection; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "record", label: "Record", icon: Mic },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { id: "settings", label: "Settings", icon: Settings },
+  { id: "vibe-coding", label: "Vibe Coding", icon: Hash },
+  { id: "dictionary", label: "Dictionary", icon: BookOpen },
   { id: "permissions", label: "Permissions", icon: Shield },
 ];
 

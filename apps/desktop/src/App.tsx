@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 import { FallbackPanel } from "@/components/FallbackPanel";
 import { HistoryList } from "@/components/HistoryList";
 import { MetricsDashboard } from "@/components/MetricsDashboard";
+import { DictionaryPanel } from "@/components/DictionaryPanel";
+import { VibeCodingPanel } from "@/components/VibeCodingPanel";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { Sidebar, type SidebarSection } from "@/components/Sidebar";
 import { TopBar } from "@/components/TopBar";
@@ -249,6 +251,20 @@ export default function App() {
           <SettingsPanel
             onChange={(nextSettings) => void controller.saveSettings(nextSettings)}
             modelStatus={controller.modelStatus}
+            settings={controller.settings}
+          />
+        )}
+
+        {activeSection === "vibe-coding" && (
+          <VibeCodingPanel
+            onChange={(nextSettings) => void controller.saveSettings(nextSettings)}
+            settings={controller.settings}
+          />
+        )}
+
+        {activeSection === "dictionary" && (
+          <DictionaryPanel
+            onChange={(nextSettings) => void controller.saveSettings(nextSettings)}
             settings={controller.settings}
           />
         )}
