@@ -4,6 +4,14 @@ All notable changes to the shipped Kiflo desktop app are documented in this file
 
 The format is based on Keep a Changelog and adapted to this repository's tag-driven release workflow.
 
+## [0.3.4] - 2026-03-17
+
+### Changed
+- update icon
+- rebrand from Tator to Kiflo
+- update coloring of hud
+- better side bar
+
 ## [0.3.1] - 2026-03-16
 
 ### macOS Install Note
