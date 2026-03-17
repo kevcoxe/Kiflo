@@ -1,12 +1,11 @@
-import { Mic, LayoutDashboard, History, Settings, Shield } from "lucide-react";
+import { Mic, LayoutDashboard, Settings, Shield } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type SidebarSection = "record" | "dashboard" | "history" | "settings" | "permissions";
+export type SidebarSection = "record" | "dashboard" | "settings" | "permissions";
 
 const NAV_ITEMS: { id: SidebarSection; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
   { id: "record", label: "Record", icon: Mic },
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "history", label: "History", icon: History },
   { id: "settings", label: "Settings", icon: Settings },
   { id: "permissions", label: "Permissions", icon: Shield },
 ];
@@ -14,9 +13,10 @@ const NAV_ITEMS: { id: SidebarSection; label: string; icon: React.ComponentType<
 interface SidebarProps {
   active: SidebarSection;
   onSelect: (section: SidebarSection) => void;
+  permissionsReady?: boolean;
 }
 
-export function Sidebar({ active, onSelect }: SidebarProps) {
+export function Sidebar({ active, onSelect, permissionsReady = true }: SidebarProps) {
   return (
     <aside className="flex flex-col w-52 shrink-0 border-r border-border bg-card min-h-screen">
       <div className="px-4 py-5 border-b border-border">
@@ -36,7 +36,10 @@ export function Sidebar({ active, onSelect }: SidebarProps) {
             )}
           >
             <Icon className="h-4 w-4 shrink-0" />
-            {label}
+            <span className="flex-1">{label}</span>
+            {id === "permissions" && !permissionsReady && (
+              <span className="h-2 w-2 rounded-full bg-destructive shrink-0" />
+            )}
           </button>
         ))}
       </nav>

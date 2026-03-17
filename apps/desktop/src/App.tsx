@@ -143,7 +143,7 @@ export default function App() {
 
   return (
     <div className="flex min-h-screen">
-      <Sidebar active={activeSection} onSelect={setActiveSection} />
+      <Sidebar active={activeSection} onSelect={setActiveSection} permissionsReady={permissionsReady} />
 
       <main className="flex flex-col gap-4 flex-1 p-5 overflow-y-auto">
         {activeSection === "record" && (
@@ -226,15 +226,13 @@ export default function App() {
                 text={controller.fallbackText}
               />
             ) : null}
+
+            <HistoryList history={controller.history} />
           </>
         )}
 
         {activeSection === "dashboard" && (
           <MetricsDashboard metrics={controller.historyMetrics} />
-        )}
-
-        {activeSection === "history" && (
-          <HistoryList history={controller.history} />
         )}
 
         {activeSection === "settings" && (
