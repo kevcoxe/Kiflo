@@ -323,26 +323,30 @@ export function SettingsPanel({
           onChange={(checked) => update("autoBacktrack", checked)}
           label="Enable Auto Backtrack for spoken corrections"
         />
-        <ToggleSetting
-          id="editor-file-mentions"
-          checked={settings.editorFileMentionsEnabled}
-          onChange={(checked) => update("editorFileMentionsEnabled", checked)}
-          label="Enable editor file mentions"
-        />
-        <p className="text-sm text-muted-foreground m-0">
-          In supported editor chat boxes, convert spoken file names into @mentions and
-          confirm them with Tab.
-        </p>
-        <ToggleSetting
-          id="force-editor-composer"
-          checked={settings.forceEditorComposer}
-          onChange={(checked) => update("forceEditorComposer", checked)}
-          label="Force supported editors to behave like composer fields"
-        />
-        <p className="text-sm text-muted-foreground m-0">
-          Use @mentions and Tab even when Tator cannot confirm the focused field is a
-          chat/composer input.
-        </p>
+        <div className="flex flex-col gap-1">
+          <ToggleSetting
+            id="editor-file-mentions"
+            checked={settings.editorFileMentionsEnabled}
+            onChange={(checked) => update("editorFileMentionsEnabled", checked)}
+            label="Enable editor file mentions"
+          />
+          <p className="text-sm text-muted-foreground m-0 pl-[52px]">
+            In supported editor chat boxes, convert spoken file names into @mentions and
+            confirm them with Tab.
+          </p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <ToggleSetting
+            id="force-editor-composer"
+            checked={settings.forceEditorComposer}
+            onChange={(checked) => update("forceEditorComposer", checked)}
+            label="Force supported editors to behave like composer fields"
+          />
+          <p className="text-sm text-muted-foreground m-0 pl-[52px]">
+            Use @mentions and Tab even when Tator cannot confirm the focused field is a
+            chat/composer input.
+          </p>
+        </div>
         <ToggleSetting
           id="spoken-press-enter"
           checked={settings.spokenPressEnterCommand}
