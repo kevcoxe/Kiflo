@@ -840,11 +840,6 @@ fn create_tray(app: &AppHandle) -> tauri::Result<()> {
 
     if let Some(icon) = tray_icon_image() {
         tray = tray.icon(icon);
-
-        #[cfg(target_os = "macos")]
-        {
-            tray = tray.icon_as_template(true);
-        }
     } else if let Some(icon) = app.default_window_icon().cloned() {
         tray = tray.icon(icon);
     }
