@@ -70,7 +70,7 @@ const POSITIVE_COMPOSER_CUES: &[&str] = &[
     "agent",
 ];
 const NEGATIVE_COMPOSER_CUES: &[&str] =
-    &["editor", "terminal", "search", "rename", "find", "explorer"];
+    &["editor", "terminal", "search", "rename", "find", "explorer", "command to run"];
 const TEXT_INPUT_ROLE_CUES: &[&str] = &["axtextarea", "axtextfield", "axsearchfield", "axcombobox"];
 const TEXT_INPUT_VALUE_CUES: &[&str] = &["text area", "text field", "editable text", "input"];
 
@@ -683,6 +683,36 @@ mod tests {
         assert_eq!(context.matched_negative_cues.len(), 0);
         assert!(context.is_composer);
         assert!(context.confidence >= 0.60);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn classify_focused_context_rejects_cursor_command_palette() {
+        // Cursor command palette: AXTextField with placeholder "Type the name of a command to run."
+        // conf would be 0.65 (supported editor + text input) without the negative cue
+        let context = classify_focused_editor_context(
+            Some("Cursor".to_string()),
+            AccessibilitySnapshot {
+                role_values: vec![
+                    "AXTextField".to_string(),
+                    "text field".to_string(),
+                    "AXGroup".to_string(),
+                    "group".to_string(),
+                ],
+                text_values: vec![
+                    "AXTextField".to_string(),
+                    "text field".to_string(),
+                    "input".to_string(),
+                    "Type the name of a command to run.".to_string(),
+                    "AXGroup".to_string(),
+                    "group".to_string(),
+                ],
+            },
+        );
+
+        assert!(context.is_supported_editor);
+        assert!(!context.is_composer);
+        assert!(!context.matched_negative_cues.is_empty());
     }
 
     #[cfg(target_os = "macos")]
