@@ -67,6 +67,7 @@ const POSITIVE_COMPOSER_CUES: &[&str] = &[
     "copilot",
     "message",
     "ask",
+    "agent",
 ];
 const NEGATIVE_COMPOSER_CUES: &[&str] =
     &["editor", "terminal", "search", "rename", "find", "explorer"];
@@ -605,6 +606,27 @@ mod tests {
                     "AXTextArea".to_string(),
                     "Ask Copilot".to_string(),
                     "Chat composer".to_string(),
+                ],
+            },
+        );
+
+        assert!(context.is_supported_editor);
+        assert!(context.is_composer);
+        assert!(context.confidence >= 0.75);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn classify_focused_context_detects_cursor_agent_panel() {
+        // Cursor v0.45+ rebranded "Composer" to "Agent"
+        let context = classify_focused_editor_context(
+            Some("Cursor".to_string()),
+            AccessibilitySnapshot {
+                role_values: vec!["AXTextArea".to_string()],
+                text_values: vec![
+                    "AXTextArea".to_string(),
+                    "Ask Agent".to_string(),
+                    "Chat Agent".to_string(),
                 ],
             },
         );

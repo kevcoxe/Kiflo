@@ -390,7 +390,9 @@ fn transcribe_with_whisper_cpp(
 
     let raw_text = raw_text?;
 
-    let raw_text = raw_text.trim().to_string();
+    // Whisper emits special tokens like [BLANK_AUDIO], [MUSIC], [NOISE] for
+    // non-speech audio. Strip them out before checking if anything was said.
+    let raw_text = strip_whisper_special_tokens(&raw_text).trim().to_string();
     if raw_text.is_empty() {
         return Err(
             "No speech was detected in the recording. Try speaking louder or checking the selected microphone."
@@ -479,6 +481,23 @@ fn resample_audio(samples: &[f32], input_sample_rate: u32, output_sample_rate: u
     }
 
     output
+}
+
+fn strip_whisper_special_tokens(text: &str) -> String {
+    // Whisper outputs bracketed non-speech tokens (e.g. [BLANK_AUDIO], [MUSIC],
+    // [NOISE]) when it hears silence or non-speech audio. Remove them so they
+    // are never pasted into the user's editor.
+    let mut result = String::with_capacity(text.len());
+    let mut depth = 0usize;
+    for ch in text.chars() {
+        match ch {
+            '[' => depth += 1,
+            ']' if depth > 0 => depth -= 1,
+            _ if depth == 0 => result.push(ch),
+            _ => {}
+        }
+    }
+    result
 }
 
 fn transcribe_with_model(
@@ -1855,6 +1874,15 @@ mod tests {
     use std::io::{self, Read};
 
     use uuid::Uuid;
+
+    #[test]
+    fn strip_whisper_special_tokens_removes_blank_audio() {
+        assert_eq!(strip_whisper_special_tokens("[BLANK_AUDIO]"), "");
+        assert_eq!(strip_whisper_special_tokens(" [BLANK_AUDIO] "), "  ");
+        assert_eq!(strip_whisper_special_tokens("[MUSIC]hello[NOISE]"), "hello");
+        assert_eq!(strip_whisper_special_tokens("hello world"), "hello world");
+        assert_eq!(strip_whisper_special_tokens(""), "");
+    }
 
     #[test]
     fn cleanup_formats_sentences() {
