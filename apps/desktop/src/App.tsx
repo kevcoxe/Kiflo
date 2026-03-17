@@ -12,6 +12,7 @@ import { HistoryList } from "@/components/HistoryList";
 import { MetricsDashboard } from "@/components/MetricsDashboard";
 import { SettingsPanel } from "@/components/SettingsPanel";
 import { Sidebar, type SidebarSection } from "@/components/Sidebar";
+import { TopBar } from "@/components/TopBar";
 import { useDictationController } from "@/hooks/useDictationController";
 
 function statusLabel(status: ReturnType<typeof useDictationController>["status"]) {
@@ -145,6 +146,12 @@ export default function App() {
     <div className="flex min-h-screen">
       <Sidebar active={activeSection} onSelect={setActiveSection} permissionsReady={permissionsReady} />
 
+      <div className="flex flex-col flex-1 min-h-screen">
+      <TopBar
+        section={activeSection}
+        theme={controller.settings.theme}
+        onThemeChange={(theme) => void controller.saveSettings({ ...controller.settings, theme })}
+      />
       <main className="flex flex-col gap-4 flex-1 p-5 overflow-y-auto">
         {activeSection === "record" && (
           <>
@@ -322,6 +329,7 @@ export default function App() {
           </Card>
         )}
       </main>
+      </div>
     </div>
   );
 }
