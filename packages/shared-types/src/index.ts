@@ -2,6 +2,7 @@ export const DICTATION_MODES = [
   "default",
   "chat",
   "bullet_list",
+  "auto",
 ] as const;
 
 export type DictationMode = (typeof DICTATION_MODES)[number];

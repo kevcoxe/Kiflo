@@ -241,11 +241,11 @@ pub fn cleanup_text(
     };
     let text = apply_custom_dictionary(&corrected, custom_dictionary);
     let mention_template = extract_file_mentions(&text);
-    let formatted_template = if matches!(mode, DictationMode::BulletList) {
-        format_bullets(&mention_template.template, style)
-            .unwrap_or_else(|| format_sentence(&mention_template.template, mode, style))
-    } else {
-        format_sentence(&mention_template.template, mode, style)
+    let formatted_template = match mode {
+        DictationMode::BulletList => format_bullets(&mention_template.template, style)
+            .unwrap_or_else(|| format_sentence(&mention_template.template, mode, style)),
+        DictationMode::Auto => format_auto(&mention_template.template, style),
+        _ => format_sentence(&mention_template.template, mode, style),
     };
     let insertion_plan = build_insertion_plan(&formatted_template, &mention_template.mentions);
     let clean_text = apply_mentions_to_text(&formatted_template, &mention_template.mentions);
@@ -552,6 +552,7 @@ fn mock_transcription(
             }),
         DictationMode::Chat => "running five minutes late be there soon".to_string(),
         DictationMode::BulletList => "make a list eggs milk bread and apples".to_string(),
+        DictationMode::Auto => "make an outline with one problem two solutions three pricing keep it under 100 words".to_string(),
     };
 
     TranscriptionResponse {
@@ -1153,6 +1154,153 @@ fn placeholder_free_lowercase(text: &str) -> String {
         .collect::<Vec<_>>()
         .join(" ")
         .to_lowercase()
+}
+
+fn cardinal_value(word: &str) -> Option<usize> {
+    match word {
+        "one" => Some(1),
+        "two" => Some(2),
+        "three" => Some(3),
+        "four" => Some(4),
+        "five" => Some(5),
+        "six" => Some(6),
+        "seven" => Some(7),
+        "eight" => Some(8),
+        "nine" => Some(9),
+        "ten" => Some(10),
+        "eleven" => Some(11),
+        "twelve" => Some(12),
+        _ => None,
+    }
+}
+
+fn ordinal_value(word: &str) -> Option<usize> {
+    match word {
+        "first" => Some(1),
+        "second" => Some(2),
+        "third" => Some(3),
+        "fourth" => Some(4),
+        "fifth" => Some(5),
+        "sixth" => Some(6),
+        "seventh" => Some(7),
+        "eighth" => Some(8),
+        "ninth" => Some(9),
+        "tenth" => Some(10),
+        "eleventh" => Some(11),
+        "twelfth" => Some(12),
+        _ => None,
+    }
+}
+
+fn number_word_value(word: &str) -> Option<usize> {
+    cardinal_value(word).or_else(|| ordinal_value(word))
+}
+
+fn detect_inline_numbered_list(text: &str) -> Option<(String, Vec<String>, String)> {
+    let tokens: Vec<&str> = text.split_whitespace().collect();
+    if tokens.is_empty() {
+        return None;
+    }
+
+    // Find the first token that maps to the value 1
+    let start_index = tokens
+        .iter()
+        .position(|token| number_word_value(&normalize_word(token)) == Some(1))?;
+
+    let prefix = tokens[..start_index].join(" ");
+    let mut items: Vec<String> = Vec::new();
+    let mut suffix = String::new();
+    let mut index = start_index;
+    let mut expected = 1usize;
+    let mut current_item_words: Vec<&str> = Vec::new();
+
+    // Skip the first number word (already confirmed == 1)
+    index += 1;
+
+    while index < tokens.len() {
+        let word = normalize_word(tokens[index]);
+
+        // Check if this word is the next expected number
+        if number_word_value(&word) == Some(expected + 1) {
+            // Save the current item (strip trailing period from last word)
+            let item = join_item_words(&current_item_words);
+            items.push(item);
+            current_item_words.clear();
+            expected += 1;
+            index += 1;
+            continue;
+        }
+
+        // Check if this word ends with a period (sentence boundary)
+        if tokens[index].ends_with('.') {
+            // Include this word (stripped of trailing period) in the current item
+            let word_trimmed = tokens[index].trim_end_matches('.');
+            if !word_trimmed.is_empty() {
+                current_item_words.push(word_trimmed);
+            }
+            let item = join_item_words(&current_item_words);
+            items.push(item);
+            current_item_words.clear();
+            index += 1;
+            // Everything after is suffix
+            suffix = tokens[index..].join(" ");
+            break;
+        }
+
+        current_item_words.push(tokens[index]);
+        index += 1;
+    }
+
+    // If we still have words in current_item_words, finalize last item
+    if !current_item_words.is_empty() {
+        items.push(join_item_words(&current_item_words));
+    }
+
+    if items.len() < 2 {
+        return None;
+    }
+
+    Some((prefix, items, suffix))
+}
+
+fn join_item_words(words: &[&str]) -> String {
+    words
+        .iter()
+        .map(|w| w.trim_end_matches('.'))
+        .filter(|w| !w.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn format_auto(text: &str, style: TypingStyle) -> String {
+    let Some((prefix, items, suffix)) = detect_inline_numbered_list(text) else {
+        return format_sentence(text, DictationMode::Default, style);
+    };
+
+    // Format prefix: sentence case, strip trailing period, append ":"
+    let formatted_prefix = {
+        let cased = sentence_case(&prefix);
+        let stripped = cased.trim_end_matches('.').to_string();
+        format!("{stripped}:")
+    };
+
+    // Format numbered items
+    let formatted_items = items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| {
+            let formatted = format_list_item(item.trim_matches(|c| c == ' ' || c == '.'), style);
+            format!("{}. {formatted}", i + 1)
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    if suffix.is_empty() {
+        format!("{formatted_prefix}\n\n{formatted_items}")
+    } else {
+        let formatted_suffix = format_sentence(&suffix, DictationMode::Default, style);
+        format!("{formatted_prefix}\n\n{formatted_items}\n\n{formatted_suffix}")
+    }
 }
 
 fn format_bullets(text: &str, style: TypingStyle) -> Option<String> {
@@ -2372,5 +2520,80 @@ mod tests {
             self.emitted_chunk = true;
             Ok(chunk.len())
         }
+    }
+
+    #[test]
+    fn detect_inline_numbered_list_parses_cardinal_with_suffix() {
+        let result = detect_inline_numbered_list(
+            "make an outline with one problem two solutions three pricing. keep it under 100 words",
+        );
+        assert!(result.is_some());
+        let (prefix, items, suffix) = result.unwrap();
+        assert_eq!(prefix, "make an outline with");
+        assert_eq!(items, vec!["problem", "solutions", "pricing"]);
+        assert_eq!(suffix, "keep it under 100 words");
+    }
+
+    #[test]
+    fn detect_inline_numbered_list_returns_none_for_single_number() {
+        let result = detect_inline_numbered_list("one thing");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn detect_inline_numbered_list_returns_none_for_no_numbers() {
+        let result = detect_inline_numbered_list("hello world");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn detect_inline_numbered_list_parses_ordinal_form() {
+        let result =
+            detect_inline_numbered_list("first problem second solution third pricing");
+        assert!(result.is_some());
+        let (prefix, items, suffix) = result.unwrap();
+        assert_eq!(prefix, "");
+        assert_eq!(items, vec!["problem", "solution", "pricing"]);
+        assert_eq!(suffix, "");
+    }
+
+    #[test]
+    fn detect_inline_numbered_list_handles_no_suffix() {
+        let result = detect_inline_numbered_list("one eggs two milk three bread");
+        assert!(result.is_some());
+        let (prefix, items, suffix) = result.unwrap();
+        assert_eq!(prefix, "");
+        assert_eq!(items, vec!["eggs", "milk", "bread"]);
+        assert_eq!(suffix, "");
+    }
+
+    #[test]
+    fn cleanup_auto_mode_formats_inline_numbered_list() {
+        let result = cleanup_text(
+            "make an outline with one problem two solutions three pricing. keep it under 100 words",
+            DictationMode::Auto,
+            false,
+            false,
+            "",
+            "formal",
+        );
+        assert!(result.clean_text.contains("1. Problem"));
+        assert!(result.clean_text.contains("2. Solutions"));
+        assert!(result.clean_text.contains("3. Pricing"));
+        assert!(result.clean_text.starts_with("Make an outline with:"));
+        assert!(result.clean_text.contains("Keep it under 100 words."));
+    }
+
+    #[test]
+    fn cleanup_auto_mode_falls_back_to_sentence_when_no_list() {
+        let result = cleanup_text(
+            "send the update tomorrow",
+            DictationMode::Auto,
+            false,
+            false,
+            "",
+            "formal",
+        );
+        assert_eq!(result.clean_text, "Send the update tomorrow.");
     }
 }
