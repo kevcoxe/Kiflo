@@ -1149,6 +1149,12 @@ fn is_placeholder_token(token: &str) -> bool {
     token.starts_with(FILE_MENTION_PLACEHOLDER_PREFIX) && token.ends_with("__")
 }
 
+fn ends_with_placeholder(text: &str) -> bool {
+    text.split_whitespace()
+        .last()
+        .is_some_and(is_placeholder_token)
+}
+
 fn is_only_placeholder_text(text: &str) -> bool {
     let mut tokens = text.split_whitespace();
     matches!(
@@ -1397,12 +1403,7 @@ fn format_sentence(text: &str, mode: DictationMode, style: TypingStyle) -> Strin
 
     // Don't add terminal punctuation when the sentence ends with a file mention
     // placeholder — the rendered @filename already looks complete on its own.
-    let ends_with_file_mention = sentence
-        .split_whitespace()
-        .last()
-        .is_some_and(is_placeholder_token);
-
-    if !ends_with_file_mention && !sentence.ends_with(['!', '?']) {
+    if !ends_with_placeholder(&sentence) && !sentence.ends_with(['!', '?']) {
         let punctuation = if !is_question { '.' } else { '?' };
         sentence.push(punctuation);
     }
