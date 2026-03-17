@@ -4,6 +4,22 @@ All notable changes to the shipped Tator desktop app are documented in this file
 
 The format is based on Keep a Changelog and adapted to this repository's tag-driven release workflow.
 
+## [0.3.1] - 2026-03-16
+
+### macOS Install Note
+
+This build is not notarized. After dragging Tator to `/Applications`, run the following command in Terminal before opening the app:
+
+```
+xattr -dr com.apple.quarantine /Applications/Tator.app
+```
+
+### Changed
+- Fix formatting of toggle subtext
+- Improve list rendering with auto mode
+- Add navigation sidebar with section-based layout
+- Add theme selector with system, light, and dark options
+
 ## [0.3.0] - 2026-03-13
 
 ### Changed
