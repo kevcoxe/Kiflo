@@ -684,7 +684,7 @@ fn normalize_custom_dictionary(dictionary: &str) -> String {
 fn normalize_preferred_mode(mode: &str) -> String {
     match mode {
         "notes" => "bullet_list".to_string(),
-        "default" | "chat" | "bullet_list" => mode.to_string(),
+        "default" | "chat" | "bullet_list" | "auto" => mode.to_string(),
         _ => "default".to_string(),
     }
 }
@@ -699,7 +699,7 @@ fn normalize_typing_style(style: &str) -> String {
 fn normalize_history_mode(mode: &str) -> String {
     match mode {
         "notes" => "bullet_list".to_string(),
-        "default" | "chat" | "bullet_list" => mode.to_string(),
+        "default" | "chat" | "bullet_list" | "auto" => mode.to_string(),
         _ => "default".to_string(),
     }
 }

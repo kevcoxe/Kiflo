@@ -159,6 +159,7 @@ pub enum DictationMode {
     Default,
     Chat,
     BulletList,
+    Auto,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

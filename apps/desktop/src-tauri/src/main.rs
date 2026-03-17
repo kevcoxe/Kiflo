@@ -31,6 +31,7 @@ const MENU_ITEM_MODE_SUBMENU: &str = "mode-submenu";
 const MENU_ITEM_MODE_DEFAULT: &str = "mode-default";
 const MENU_ITEM_MODE_CHAT: &str = "mode-chat";
 const MENU_ITEM_MODE_LIST: &str = "mode-list";
+const MENU_ITEM_MODE_AUTO: &str = "mode-auto";
 const MENU_ITEM_STYLE_SUBMENU: &str = "style-submenu";
 const MENU_ITEM_STYLE_VERY_CASUAL: &str = "style-very-casual";
 const MENU_ITEM_STYLE_FORMAL: &str = "style-formal";
@@ -308,7 +309,7 @@ fn hide_hud_command(app: AppHandle, state: State<'_, AppState>) -> Result<(), St
 fn tray_mode_menu_items(
     app: &AppHandle,
     preferred_mode: &str,
-) -> tauri::Result<[CheckMenuItem<tauri::Wry>; 3]> {
+) -> tauri::Result<[CheckMenuItem<tauri::Wry>; 4]> {
     Ok([
         CheckMenuItem::with_id(
             app,
@@ -332,6 +333,14 @@ fn tray_mode_menu_items(
             "bullet_list",
             true,
             preferred_mode == "bullet_list",
+            None::<&str>,
+        )?,
+        CheckMenuItem::with_id(
+            app,
+            MENU_ITEM_MODE_AUTO,
+            "auto",
+            true,
+            preferred_mode == "auto",
             None::<&str>,
         )?,
     ])
@@ -386,13 +395,13 @@ fn build_tray_menu(app: &AppHandle, settings: &Settings) -> tauri::Result<Menu<t
         true,
         None::<&str>,
     )?;
-    let [default_mode, chat_mode, list_mode] = tray_mode_menu_items(app, &settings.preferred_mode)?;
+    let [default_mode, chat_mode, list_mode, auto_mode] = tray_mode_menu_items(app, &settings.preferred_mode)?;
     let mode_menu = Submenu::with_id_and_items(
         app,
         MENU_ITEM_MODE_SUBMENU,
         "Mode",
         true,
-        &[&default_mode, &chat_mode, &list_mode],
+        &[&default_mode, &chat_mode, &list_mode, &auto_mode],
     )?;
     let [very_casual_style, formal_style, excited_style] =
         tray_style_menu_items(app, &settings.typing_style)?;
@@ -601,6 +610,7 @@ fn preferred_mode_for_menu_item(menu_id: &str) -> Option<&'static str> {
         MENU_ITEM_MODE_DEFAULT => Some("default"),
         MENU_ITEM_MODE_CHAT => Some("chat"),
         MENU_ITEM_MODE_LIST => Some("bullet_list"),
+        MENU_ITEM_MODE_AUTO => Some("auto"),
         _ => None,
     }
 }
