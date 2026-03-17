@@ -139,11 +139,26 @@ const VALUE_LIKE_TOKENS: &[&str] = &[
 ];
 const VALUE_LIKE_CONNECTORS: &[&str] = &["and", "or"];
 
-#[derive(Debug, Default)]
+/// Wraps `WhisperContext` (which holds a raw C pointer) so it can be stored
+/// inside `Mutex<ModelRuntimeState>`.  The underlying whisper.cpp context is
+/// read-only after creation; all mutable inference state lives in the
+/// per-call `WhisperState` object.  It is therefore safe to move across
+/// thread boundaries.
+struct SendableWhisperContext(WhisperContext);
+
+// SAFETY: WhisperContext wraps a *mut whisper_context that is read-only after
+// creation.  whisper.cpp's model data is not mutated during inference; each
+// inference call creates its own `whisper_state`.  Moving the context to
+// another thread is safe.
+unsafe impl Send for SendableWhisperContext {}
+
+#[derive(Default)]
 pub struct ModelRuntimeState {
     pub downloading: bool,
     pub download_target: Option<SpeechModel>,
     pub last_error: Option<String>,
+    /// Cached whisper context so the model file is not reloaded on every call.
+    cached_context: Option<SendableWhisperContext>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -316,13 +331,14 @@ pub fn prewarm_model(
     }
 
     let result = ensure_model_available(app_data_dir, resource_dir, speech_model)
-        .and_then(|model_path| load_whisper_context(&model_path).map(|_| ()));
+        .and_then(|model_path| load_whisper_context(&model_path));
 
     let mut state = runtime
         .lock()
         .map_err(|_| "Model status lock poisoned.".to_string())?;
     match result {
-        Ok(()) => {
+        Ok(context) => {
+            state.cached_context = Some(SendableWhisperContext(context));
             state.last_error = None;
             Ok(())
         }
@@ -343,14 +359,36 @@ fn transcribe_with_whisper_cpp(
 ) -> Result<TranscriptionResponse, String> {
     let model_path = ensure_model_available(app_data_dir, resource_dir, speech_model)?;
     let samples = decode_audio_for_whisper(audio)?;
-    let raw_text = transcribe_with_model(&model_path, &samples, MODEL_LANGUAGE)?;
 
+    // Take the cached context out while we run inference (so the lock is not
+    // held during the potentially long transcription call).
+    let cached = {
+        runtime
+            .lock()
+            .map_err(|_| "Model status lock poisoned.".to_string())?
+            .cached_context
+            .take()
+    };
+
+    let context = match cached {
+        Some(ctx) => ctx,
+        None => SendableWhisperContext(load_whisper_context(&model_path)?),
+    };
+
+    let raw_text = transcribe_with_model(&context.0, &samples, MODEL_LANGUAGE);
+
+    // Return the context to the cache and clear any previous error.
     {
         let mut state = runtime
             .lock()
             .map_err(|_| "Model status lock poisoned.".to_string())?;
+        if state.cached_context.is_none() {
+            state.cached_context = Some(context);
+        }
         state.last_error = None;
     }
+
+    let raw_text = raw_text?;
 
     let raw_text = raw_text.trim().to_string();
     if raw_text.is_empty() {
@@ -444,11 +482,10 @@ fn resample_audio(samples: &[f32], input_sample_rate: u32, output_sample_rate: u
 }
 
 fn transcribe_with_model(
-    model_path: &Path,
+    context: &WhisperContext,
     samples: &[f32],
     language: &str,
 ) -> Result<String, String> {
-    let context = load_whisper_context(model_path)?;
     let mut state = context
         .create_state()
         .map_err(|error| format!("Unable to create the selected whisper.cpp state: {error}"))?;
@@ -460,6 +497,12 @@ fn transcribe_with_model(
     params.set_print_progress(false);
     params.set_print_realtime(false);
     params.set_print_timestamps(false);
+    // Use all available cores up to 8; beyond that whisper.cpp sees diminishing returns.
+    let n_threads = std::thread::available_parallelism()
+        .map(|n| n.get() as i32)
+        .unwrap_or(4)
+        .min(8);
+    params.set_n_threads(n_threads);
 
     state.full(params, samples).map_err(|error| {
         format!("The selected whisper.cpp model failed to transcribe audio: {error}")
@@ -478,7 +521,11 @@ fn transcribe_with_model(
 
 fn load_whisper_context(model_path: &Path) -> Result<WhisperContext, String> {
     let model_path = model_path.to_string_lossy().into_owned();
-    WhisperContext::new_with_params(&model_path, WhisperContextParameters::default()).map_err(
+    let mut params = WhisperContextParameters::default();
+    // Request GPU (Metal on macOS/Apple Silicon).  Falls back to CPU silently
+    // if the whisper-rs build does not include GPU support.
+    params.use_gpu(true);
+    WhisperContext::new_with_params(&model_path, params).map_err(
         |error| format!("Unable to load the selected whisper.cpp model `{model_path}`: {error}"),
     )
 }
@@ -965,6 +1012,9 @@ fn literal_file_fragment(token: &str) -> Option<String> {
         .trim_matches(|character: char| {
             !character.is_ascii_alphanumeric() && !matches!(character, '.' | '/' | '-' | '_')
         })
+        // A trailing period is a sentence-ending period, not a path separator.
+        // Strip it so that "word." is never mistaken for a file reference.
+        .trim_end_matches('.')
         .to_string();
     if trimmed.is_empty() || !literal_has_file_cue(&trimmed) {
         return None;
@@ -1171,7 +1221,14 @@ fn format_sentence(text: &str, mode: DictationMode, style: TypingStyle) -> Strin
         return excited_sentence(sentence, is_question);
     }
 
-    if !sentence.ends_with(['.', '!', '?']) {
+    // Strip a trailing period that the speech-to-text model may have already
+    // added, then apply the correct terminal punctuation ourselves.  This
+    // prevents "sentence.." when whisper.cpp outputs a period and we add one.
+    if sentence.ends_with('.') {
+        sentence.pop();
+    }
+
+    if !sentence.ends_with(['!', '?']) {
         let punctuation = if !is_question { '.' } else { '?' };
         sentence.push(punctuation);
     }
@@ -2014,6 +2071,37 @@ mod tests {
                 fallback_text: "readme.md".to_string(),
             }])
         );
+    }
+
+    #[test]
+    fn cleanup_does_not_double_period_when_model_adds_trailing_period() {
+        // whisper.cpp often appends a period; the cleanup must not add another.
+        let result = cleanup_text(
+            "running five minutes late be there soon.",
+            DictationMode::Chat,
+            false,
+            false,
+            "",
+            "formal",
+        );
+        assert_eq!(
+            result.clean_text,
+            "Running five minutes late be there soon."
+        );
+    }
+
+    #[test]
+    fn cleanup_question_opener_overrides_whisper_period() {
+        // If whisper adds a period but the sentence is a question, use '?'.
+        let result = cleanup_text(
+            "can you send the update tomorrow.",
+            DictationMode::Default,
+            false,
+            false,
+            "",
+            "formal",
+        );
+        assert_eq!(result.clean_text, "Can you send the update tomorrow?");
     }
 
     #[test]
