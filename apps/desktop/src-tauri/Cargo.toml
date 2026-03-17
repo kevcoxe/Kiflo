@@ -1,6 +1,6 @@
 [package]
 name = "tator-desktop"
-version = "0.3.1"
+version = "0.3.2"
 description = "Tauri desktop app for the Tator dictation MVP."
 edition = "2021"
 
