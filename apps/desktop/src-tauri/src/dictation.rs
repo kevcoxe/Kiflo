@@ -1395,7 +1395,14 @@ fn format_sentence(text: &str, mode: DictationMode, style: TypingStyle) -> Strin
         sentence.pop();
     }
 
-    if !sentence.ends_with(['!', '?']) {
+    // Don't add terminal punctuation when the sentence ends with a file mention
+    // placeholder — the rendered @filename already looks complete on its own.
+    let ends_with_file_mention = sentence
+        .split_whitespace()
+        .last()
+        .is_some_and(is_placeholder_token);
+
+    if !ends_with_file_mention && !sentence.ends_with(['!', '?']) {
         let punctuation = if !is_question { '.' } else { '?' };
         sentence.push(punctuation);
     }
@@ -2127,7 +2134,7 @@ mod tests {
             "",
             "formal",
         );
-        assert_eq!(result.clean_text, "Please open src/app.tsx.");
+        assert_eq!(result.clean_text, "Please open src/app.tsx");
         assert_eq!(
             result.insertion_plan,
             Some(vec![
@@ -2137,9 +2144,6 @@ mod tests {
                 CleanupInsertionSegment::FileMention {
                     query: "src/app.tsx".to_string(),
                     fallback_text: "src/app.tsx".to_string(),
-                },
-                CleanupInsertionSegment::Text {
-                    text: ".".to_string(),
                 },
             ])
         );
@@ -2155,7 +2159,7 @@ mod tests {
             "",
             "formal",
         );
-        assert_eq!(result.clean_text, "Use use-dictation-controller.ts.");
+        assert_eq!(result.clean_text, "Use use-dictation-controller.ts");
         assert_eq!(
             result.insertion_plan,
             Some(vec![
@@ -2165,9 +2169,6 @@ mod tests {
                 CleanupInsertionSegment::FileMention {
                     query: "use-dictation-controller.ts".to_string(),
                     fallback_text: "use-dictation-controller.ts".to_string(),
-                },
-                CleanupInsertionSegment::Text {
-                    text: ".".to_string(),
                 },
             ])
         );
@@ -2183,7 +2184,7 @@ mod tests {
             "",
             "formal",
         );
-        assert_eq!(result.clean_text, "Open readme.");
+        assert_eq!(result.clean_text, "Open readme");
         assert_eq!(
             result.insertion_plan,
             Some(vec![
@@ -2193,9 +2194,6 @@ mod tests {
                 CleanupInsertionSegment::FileMention {
                     query: "readme".to_string(),
                     fallback_text: "readme".to_string(),
-                },
-                CleanupInsertionSegment::Text {
-                    text: ".".to_string(),
                 },
             ])
         );
@@ -2211,8 +2209,8 @@ mod tests {
             "",
             "formal",
         );
-        assert_eq!(result.clean_text, "Please open readme.md and src/app.tsx.");
-        assert_eq!(result.insertion_plan.as_ref().map(Vec::len), Some(5));
+        assert_eq!(result.clean_text, "Please open readme.md and src/app.tsx");
+        assert_eq!(result.insertion_plan.as_ref().map(Vec::len), Some(4));
     }
 
     #[test]
