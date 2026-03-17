@@ -234,7 +234,10 @@ export default function App() {
               />
             ) : null}
 
-            <HistoryList history={controller.history} />
+            <HistoryList
+              history={controller.history}
+              editorDebugMap={controller.settings.showEditorDebugHud ? controller.editorDebugMap : undefined}
+            />
           </>
         )}
 

@@ -85,6 +85,7 @@ const DEFAULT_SETTINGS: Settings = {
   saveHistory: true,
   hideDockIcon: false,
   showHud: true,
+  showEditorDebugHud: false,
   theme: "system",
 };
 
@@ -118,8 +119,13 @@ const DEFAULT_HISTORY_METRICS: HistoryMetrics = {
 const DEFAULT_FOCUSED_EDITOR_CONTEXT: FocusedEditorContext = {
   appName: null,
   isSupportedEditor: false,
+  isTextInputLike: false,
   isComposer: false,
   confidence: 0,
+  matchedPositiveCues: [],
+  matchedNegativeCues: [],
+  rawRoleValues: [],
+  rawTextValues: [],
 };
 
 const HUD_ERROR_FLASH_MS = 450;
@@ -256,6 +262,8 @@ export function useDictationController() {
   const [fallbackText, setFallbackText] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [initialized, setInitialized] = useState(false);
+  const [editorDebugMap, setEditorDebugMap] = useState<Record<string, FocusedEditorContext>>({});
+  const editorDebugMapRef = useRef<Record<string, FocusedEditorContext>>({});
 
   const stateRef = useRef<ControllerState>({
     status,
@@ -499,7 +507,7 @@ export function useDictationController() {
     }
   }
 
-  async function appendHistory(record: NewHistoryRecord) {
+  async function appendHistory(record: NewHistoryRecord, editorContext?: FocusedEditorContext) {
     if (!stateRef.current.settings.saveHistory) {
       return;
     }
@@ -507,6 +515,10 @@ export function useDictationController() {
     const savedRecord = await createHistoryRecord(record);
     const metrics = await getHistoryMetrics().catch(() => null);
     setHistory((current) => [savedRecord, ...current].slice(0, 8));
+    if (editorContext && stateRef.current.settings.showEditorDebugHud) {
+      editorDebugMapRef.current = { ...editorDebugMapRef.current, [savedRecord.id]: editorContext };
+      setEditorDebugMap({ ...editorDebugMapRef.current });
+    }
     if (metrics) {
       stateRef.current = {
         ...stateRef.current,
@@ -631,14 +643,17 @@ export function useDictationController() {
         }
       }
 
-      await appendHistory({
-        appName,
-        mode: activeState.mode,
-        audioDurationMs: audio.durationMs,
-        rawText: transcription.raw_text,
-        cleanText,
-        status: historyStatus,
-      });
+      await appendHistory(
+        {
+          appName,
+          mode: activeState.mode,
+          audioDurationMs: audio.durationMs,
+          rawText: transcription.raw_text,
+          cleanText,
+          status: historyStatus,
+        },
+        focusedEditorContext,
+      );
 
       if (processingSucceeded) {
         void safelyHideHud();
@@ -863,6 +878,7 @@ export function useDictationController() {
     historyMetrics,
     mode,
     history,
+    editorDebugMap,
     fallbackText,
     error,
     initialized,

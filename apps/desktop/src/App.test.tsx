@@ -29,6 +29,7 @@ const defaultSettings: Settings = {
   saveHistory: true,
   hideDockIcon: false,
   showHud: true,
+  showEditorDebugHud: false,
   theme: "system",
 };
 
@@ -97,8 +98,13 @@ function mockSuccessfulBootstrap() {
   vi.spyOn(desktop, "getFocusedEditorContext").mockResolvedValue({
     appName: "TextEdit",
     isSupportedEditor: false,
+    isTextInputLike: false,
     isComposer: false,
     confidence: 0,
+    matchedPositiveCues: [],
+    matchedNegativeCues: [],
+    rawRoleValues: [],
+    rawTextValues: [],
   });
   vi.spyOn(desktop, "getFrontmostApp").mockResolvedValue("TextEdit");
   vi.spyOn(desktop, "captureClipboard").mockResolvedValue({ text: "before" });
@@ -515,8 +521,13 @@ describe("App", () => {
     vi.spyOn(desktop, "getFocusedEditorContext").mockResolvedValue({
       appName: "Cursor",
       isSupportedEditor: true,
+      isTextInputLike: true,
       isComposer: true,
       confidence: 0.96,
+      matchedPositiveCues: [],
+      matchedNegativeCues: [],
+      rawRoleValues: [],
+      rawTextValues: [],
     });
     vi.spyOn(desktop, "cleanupText").mockResolvedValue({
       clean_text: "Please open readme.md.",
@@ -554,8 +565,13 @@ describe("App", () => {
     vi.spyOn(desktop, "getFocusedEditorContext").mockResolvedValue({
       appName: "Cursor",
       isSupportedEditor: true,
+      isTextInputLike: false,
       isComposer: false,
       confidence: 0.52,
+      matchedPositiveCues: [],
+      matchedNegativeCues: [],
+      rawRoleValues: [],
+      rawTextValues: [],
     });
     vi.spyOn(desktop, "cleanupText").mockResolvedValue({
       clean_text: "Please open readme.md.",
@@ -591,8 +607,13 @@ describe("App", () => {
     vi.spyOn(desktop, "getFocusedEditorContext").mockResolvedValue({
       appName: "Cursor",
       isSupportedEditor: true,
+      isTextInputLike: false,
       isComposer: false,
       confidence: 0.31,
+      matchedPositiveCues: [],
+      matchedNegativeCues: [],
+      rawRoleValues: [],
+      rawTextValues: [],
     });
     vi.spyOn(desktop, "cleanupText").mockResolvedValue({
       clean_text: "Check package.json.",

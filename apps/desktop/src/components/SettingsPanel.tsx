@@ -400,6 +400,18 @@ export function SettingsPanel({
           onChange={(checked) => update("showHud", checked)}
           label="Show recording HUD overlay"
         />
+        <div className="flex flex-col gap-1">
+          <ToggleSetting
+            id="show-editor-debug-hud"
+            checked={settings.showEditorDebugHud}
+            onChange={(checked) => update("showEditorDebugHud", checked)}
+            label="Show editor detection debug info in history"
+          />
+          <p className="text-sm text-muted-foreground m-0 pl-[52px]">
+            Annotates each history entry with the app name, composer detection result, confidence
+            score, and matched cues.
+          </p>
+        </div>
       </CardContent>
     </Card>
   );

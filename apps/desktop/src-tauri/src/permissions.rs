@@ -420,14 +420,18 @@ fn classify_focused_editor_context(
         || TEXT_INPUT_VALUE_CUES
             .iter()
             .any(|cue| text_blob.contains(cue));
-    let positive_hits = POSITIVE_COMPOSER_CUES
+    let matched_positive_cues: Vec<String> = POSITIVE_COMPOSER_CUES
         .iter()
         .filter(|cue| role_blob.contains(**cue) || text_blob.contains(**cue))
-        .count();
-    let negative_hits = NEGATIVE_COMPOSER_CUES
+        .map(|cue| cue.to_string())
+        .collect();
+    let matched_negative_cues: Vec<String> = NEGATIVE_COMPOSER_CUES
         .iter()
         .filter(|cue| role_blob.contains(**cue) || text_blob.contains(**cue))
-        .count();
+        .map(|cue| cue.to_string())
+        .collect();
+    let positive_hits = matched_positive_cues.len();
+    let negative_hits = matched_negative_cues.len();
     let mut confidence = 0.0;
 
     if is_supported_editor {
@@ -443,12 +447,16 @@ fn classify_focused_editor_context(
     FocusedEditorContext {
         app_name,
         is_supported_editor,
+        is_text_input_like,
         is_composer: is_supported_editor
             && is_text_input_like
-            && positive_hits > 0
             && negative_hits == 0
-            && confidence >= 0.75,
+            && confidence >= 0.60,
         confidence,
+        matched_positive_cues,
+        matched_negative_cues,
+        raw_role_values: snapshot.role_values,
+        raw_text_values: snapshot.text_values,
     }
 }
 
@@ -653,6 +661,28 @@ mod tests {
 
         assert!(context.is_supported_editor);
         assert!(!context.is_composer);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn classify_focused_context_detects_cursor_agent_with_generic_ax_labels() {
+        // Cursor's Agent panel exposes only generic AX labels — no named cues like "agent"
+        // or "chat" appear in the AX tree. Detection must rely on supported-editor +
+        // text-input + absence of negative cues alone.
+        let context = classify_focused_editor_context(
+            Some("Cursor".to_string()),
+            AccessibilitySnapshot {
+                role_values: vec!["AXTextArea".to_string(), "text entry area".to_string(), "AXGroup".to_string(), "group".to_string()],
+                text_values: vec!["AXTextArea".to_string(), "text entry area".to_string(), "AXGroup".to_string(), "group".to_string()],
+            },
+        );
+
+        assert!(context.is_supported_editor);
+        assert!(context.is_text_input_like);
+        assert_eq!(context.matched_positive_cues.len(), 0);
+        assert_eq!(context.matched_negative_cues.len(), 0);
+        assert!(context.is_composer);
+        assert!(context.confidence >= 0.60);
     }
 
     #[cfg(target_os = "macos")]

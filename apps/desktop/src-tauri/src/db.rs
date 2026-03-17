@@ -29,6 +29,7 @@ CREATE TABLE IF NOT EXISTS settings (
   save_history INTEGER NOT NULL,
   hide_dock_icon INTEGER NOT NULL DEFAULT 0,
   show_hud INTEGER NOT NULL DEFAULT 1,
+  show_editor_debug_hud INTEGER NOT NULL DEFAULT 0,
   theme TEXT NOT NULL DEFAULT 'system'
 );
 
@@ -67,7 +68,7 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
     let connection = open(path)?;
     let mut settings = connection
         .query_row(
-            "SELECT hotkey, auto_paste, auto_backtrack, editor_file_mentions_enabled, force_editor_composer, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, speech_model, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, typing_style, custom_dictionary, save_history, hide_dock_icon, show_hud, theme
+            "SELECT hotkey, auto_paste, auto_backtrack, editor_file_mentions_enabled, force_editor_composer, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, speech_model, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, typing_style, custom_dictionary, save_history, hide_dock_icon, show_hud, show_editor_debug_hud, theme
              FROM settings WHERE id = 1",
             [],
             |row| {
@@ -90,7 +91,8 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
                     save_history: row.get::<_, i64>(15)? != 0,
                     hide_dock_icon: row.get::<_, i64>(16)? != 0,
                     show_hud: row.get::<_, i64>(17)? != 0,
-                    theme: row.get(18)?,
+                    show_editor_debug_hud: row.get::<_, i64>(18)? != 0,
+                    theme: row.get(19)?,
                 })
             },
         )
@@ -380,9 +382,10 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 save_history,
                 hide_dock_icon,
                 show_hud,
+                show_editor_debug_hud,
                 theme
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
              ON CONFLICT(id) DO UPDATE SET
                 hotkey = excluded.hotkey,
                 auto_paste = excluded.auto_paste,
@@ -402,6 +405,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 save_history = excluded.save_history,
                 hide_dock_icon = excluded.hide_dock_icon,
                 show_hud = excluded.show_hud,
+                show_editor_debug_hud = excluded.show_editor_debug_hud,
                 theme = excluded.theme",
             params![
                 settings.hotkey,
@@ -422,6 +426,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 bool_to_integer(settings.save_history),
                 bool_to_integer(settings.hide_dock_icon),
                 bool_to_integer(settings.show_hud),
+                bool_to_integer(settings.show_editor_debug_hud),
                 settings.theme,
             ],
         )
@@ -504,6 +509,12 @@ fn ensure_settings_columns(connection: &Connection) -> Result<(), String> {
     add_column_if_missing(
         connection,
         "settings",
+        "show_editor_debug_hud",
+        "INTEGER NOT NULL DEFAULT 0",
+    )?;
+    add_column_if_missing(
+        connection,
+        "settings",
         "typing_style",
         "TEXT NOT NULL DEFAULT 'formal'",
     )?;
@@ -549,7 +560,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               custom_dictionary TEXT NOT NULL DEFAULT '',
               save_history INTEGER NOT NULL,
               hide_dock_icon INTEGER NOT NULL DEFAULT 0,
-              show_hud INTEGER NOT NULL DEFAULT 1
+              show_hud INTEGER NOT NULL DEFAULT 1,
+              show_editor_debug_hud INTEGER NOT NULL DEFAULT 0
             );
             INSERT INTO settings_next (
               id,
@@ -570,7 +582,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               custom_dictionary,
               save_history,
               hide_dock_icon,
-              show_hud
+              show_hud,
+              show_editor_debug_hud
             )
             SELECT
               id,
@@ -591,7 +604,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               '',
               save_history,
               0,
-              1
+              1,
+              0
             FROM settings;
             DROP TABLE settings;
             ALTER TABLE settings_next RENAME TO settings;

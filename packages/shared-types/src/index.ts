@@ -62,6 +62,7 @@ export interface Settings {
   saveHistory: boolean;
   hideDockIcon: boolean;
   showHud: boolean;
+  showEditorDebugHud: boolean;
   theme: Theme;
 }
 
@@ -127,8 +128,13 @@ export type CleanupInsertionSegment =
 export interface FocusedEditorContext {
   appName: string | null;
   isSupportedEditor: boolean;
+  isTextInputLike: boolean;
   isComposer: boolean;
   confidence: number;
+  matchedPositiveCues: string[];
+  matchedNegativeCues: string[];
+  rawRoleValues: string[];
+  rawTextValues: string[];
 }
 
 export interface ModelStatus {

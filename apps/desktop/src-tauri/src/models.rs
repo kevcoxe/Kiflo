@@ -50,6 +50,7 @@ pub struct Settings {
     pub save_history: bool,
     pub hide_dock_icon: bool,
     pub show_hud: bool,
+    pub show_editor_debug_hud: bool,
     pub theme: String,
 }
 
@@ -74,6 +75,7 @@ impl Default for Settings {
             save_history: true,
             hide_dock_icon: false,
             show_hud: true,
+            show_editor_debug_hud: false,
             theme: "system".to_string(),
         }
     }
@@ -195,8 +197,13 @@ pub enum CleanupInsertionSegment {
 pub struct FocusedEditorContext {
     pub app_name: Option<String>,
     pub is_supported_editor: bool,
+    pub is_text_input_like: bool,
     pub is_composer: bool,
     pub confidence: f64,
+    pub matched_positive_cues: Vec<String>,
+    pub matched_negative_cues: Vec<String>,
+    pub raw_role_values: Vec<String>,
+    pub raw_text_values: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
