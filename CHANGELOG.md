@@ -4,6 +4,13 @@ All notable changes to the shipped Kiflo desktop app are documented in this file
 
 The format is based on Keep a Changelog and adapted to this repository's tag-driven release workflow.
 
+## [0.3.5] - 2026-03-26
+
+### Changed
+- Add a microphone picker in Settings so recordings can use a specific input device instead of only the system default
+- Improve recording capture by averaging multi-channel input instead of only using the first channel
+- Fix the macOS bundle signing configuration and update the microphone permission copy to use the Kiflo name
+
 ## [0.3.4] - 2026-03-17
 
 ### Changed
