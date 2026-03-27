@@ -359,6 +359,12 @@ fn transcribe_with_whisper_cpp(
 ) -> Result<TranscriptionResponse, String> {
     let model_path = ensure_model_available(app_data_dir, resource_dir, speech_model)?;
     let samples = decode_audio_for_whisper(audio)?;
+    if !contains_likely_speech(&samples) {
+        return Err(
+            "No speech was detected in the recording. Try speaking louder or checking the selected microphone."
+                .to_string(),
+        );
+    }
 
     // Take the cached context out while we run inference (so the lock is not
     // held during the potentially long transcription call).
@@ -498,6 +504,27 @@ fn strip_whisper_special_tokens(text: &str) -> String {
         }
     }
     result
+}
+
+fn contains_likely_speech(samples: &[f32]) -> bool {
+    if samples.is_empty() {
+        return false;
+    }
+
+    let mut sum_squares = 0.0_f64;
+    let mut peak = 0.0_f32;
+    for sample in samples {
+        let magnitude = sample.abs();
+        peak = peak.max(magnitude);
+        sum_squares += f64::from(magnitude * magnitude);
+    }
+
+    let rms = (sum_squares / samples.len() as f64).sqrt() as f32;
+
+    // Pure silence or a broken input path often produces near-zero samples
+    // while whisper.cpp hallucinates short filler like "You." instead of
+    // returning an empty transcript.
+    peak >= 0.01 || rms >= 0.003
 }
 
 fn transcribe_with_model(
@@ -1890,6 +1917,19 @@ mod tests {
         assert_eq!(strip_whisper_special_tokens("[MUSIC]hello[NOISE]"), "hello");
         assert_eq!(strip_whisper_special_tokens("hello world"), "hello world");
         assert_eq!(strip_whisper_special_tokens(""), "");
+    }
+
+    #[test]
+    fn contains_likely_speech_rejects_silence() {
+        assert!(!contains_likely_speech(&[]));
+        assert!(!contains_likely_speech(&vec![0.0; 16_000]));
+        assert!(!contains_likely_speech(&vec![0.0005; 16_000]));
+    }
+
+    #[test]
+    fn contains_likely_speech_accepts_voiced_audio() {
+        assert!(contains_likely_speech(&vec![0.02; 8_000]));
+        assert!(contains_likely_speech(&vec![0.0, 0.0, 0.012, 0.0]));
     }
 
     #[test]

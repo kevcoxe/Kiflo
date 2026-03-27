@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS settings (
   pause_background_audio INTEGER NOT NULL DEFAULT 1,
   warm_model_on_launch INTEGER NOT NULL DEFAULT 1,
   speech_model TEXT NOT NULL DEFAULT 'base_en',
+  input_device_id TEXT NOT NULL DEFAULT '',
   recording_cue_volume INTEGER NOT NULL DEFAULT 75,
   restore_clipboard INTEGER NOT NULL,
   interaction_mode TEXT NOT NULL DEFAULT 'hold',
@@ -68,7 +69,7 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
     let connection = open(path)?;
     let mut settings = connection
         .query_row(
-            "SELECT hotkey, auto_paste, auto_backtrack, editor_file_mentions_enabled, force_editor_composer, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, speech_model, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, typing_style, custom_dictionary, save_history, hide_dock_icon, show_hud, show_editor_debug_hud, theme
+            "SELECT hotkey, auto_paste, auto_backtrack, editor_file_mentions_enabled, force_editor_composer, spoken_press_enter_command, pause_background_audio, warm_model_on_launch, speech_model, input_device_id, recording_cue_volume, restore_clipboard, interaction_mode, preferred_mode, typing_style, custom_dictionary, save_history, hide_dock_icon, show_hud, show_editor_debug_hud, theme
              FROM settings WHERE id = 1",
             [],
             |row| {
@@ -82,17 +83,18 @@ pub fn get_settings(path: &Path) -> Result<Settings, String> {
                     pause_background_audio: row.get::<_, i64>(6)? != 0,
                     warm_model_on_launch: row.get::<_, i64>(7)? != 0,
                     speech_model: SpeechModel::from_db_value(&row.get::<_, String>(8)?),
-                    recording_cue_volume: row.get(9)?,
-                    restore_clipboard: row.get::<_, i64>(10)? != 0,
-                    interaction_mode: row.get(11)?,
-                    preferred_mode: row.get(12)?,
-                    typing_style: row.get(13)?,
-                    custom_dictionary: row.get(14)?,
-                    save_history: row.get::<_, i64>(15)? != 0,
-                    hide_dock_icon: row.get::<_, i64>(16)? != 0,
-                    show_hud: row.get::<_, i64>(17)? != 0,
-                    show_editor_debug_hud: row.get::<_, i64>(18)? != 0,
-                    theme: row.get(19)?,
+                    input_device_id: row.get(9)?,
+                    recording_cue_volume: row.get(10)?,
+                    restore_clipboard: row.get::<_, i64>(11)? != 0,
+                    interaction_mode: row.get(12)?,
+                    preferred_mode: row.get(13)?,
+                    typing_style: row.get(14)?,
+                    custom_dictionary: row.get(15)?,
+                    save_history: row.get::<_, i64>(16)? != 0,
+                    hide_dock_icon: row.get::<_, i64>(17)? != 0,
+                    show_hud: row.get::<_, i64>(18)? != 0,
+                    show_editor_debug_hud: row.get::<_, i64>(19)? != 0,
+                    theme: row.get(20)?,
                 })
             },
         )
@@ -373,6 +375,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 pause_background_audio,
                 warm_model_on_launch,
                 speech_model,
+                input_device_id,
                 recording_cue_volume,
                 restore_clipboard,
                 interaction_mode,
@@ -385,7 +388,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 show_editor_debug_hud,
                 theme
              )
-             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
              ON CONFLICT(id) DO UPDATE SET
                 hotkey = excluded.hotkey,
                 auto_paste = excluded.auto_paste,
@@ -396,6 +399,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 pause_background_audio = excluded.pause_background_audio,
                 warm_model_on_launch = excluded.warm_model_on_launch,
                 speech_model = excluded.speech_model,
+                input_device_id = excluded.input_device_id,
                 recording_cue_volume = excluded.recording_cue_volume,
                 restore_clipboard = excluded.restore_clipboard,
                 interaction_mode = excluded.interaction_mode,
@@ -417,6 +421,7 @@ fn save_settings_connection(connection: &Connection, settings: &Settings) -> Res
                 bool_to_integer(settings.pause_background_audio),
                 bool_to_integer(settings.warm_model_on_launch),
                 settings.speech_model.as_db_value(),
+                settings.input_device_id,
                 settings.recording_cue_volume,
                 bool_to_integer(settings.restore_clipboard),
                 settings.interaction_mode,
@@ -491,6 +496,12 @@ fn ensure_settings_columns(connection: &Connection) -> Result<(), String> {
     add_column_if_missing(
         connection,
         "settings",
+        "input_device_id",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    add_column_if_missing(
+        connection,
+        "settings",
         "recording_cue_volume",
         "INTEGER NOT NULL DEFAULT 75",
     )?;
@@ -552,6 +563,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               pause_background_audio INTEGER NOT NULL DEFAULT 1,
               warm_model_on_launch INTEGER NOT NULL DEFAULT 1,
               speech_model TEXT NOT NULL DEFAULT 'base_en',
+              input_device_id TEXT NOT NULL DEFAULT '',
               recording_cue_volume INTEGER NOT NULL DEFAULT 75,
               restore_clipboard INTEGER NOT NULL,
               interaction_mode TEXT NOT NULL DEFAULT 'hold',
@@ -561,7 +573,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               save_history INTEGER NOT NULL,
               hide_dock_icon INTEGER NOT NULL DEFAULT 0,
               show_hud INTEGER NOT NULL DEFAULT 1,
-              show_editor_debug_hud INTEGER NOT NULL DEFAULT 0
+              show_editor_debug_hud INTEGER NOT NULL DEFAULT 0,
+              theme TEXT NOT NULL DEFAULT 'system'
             );
             INSERT INTO settings_next (
               id,
@@ -574,6 +587,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               pause_background_audio,
               warm_model_on_launch,
               speech_model,
+              input_device_id,
               recording_cue_volume,
               restore_clipboard,
               interaction_mode,
@@ -583,7 +597,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               save_history,
               hide_dock_icon,
               show_hud,
-              show_editor_debug_hud
+              show_editor_debug_hud,
+              theme
             )
             SELECT
               id,
@@ -596,6 +611,7 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               COALESCE(pause_background_audio, 1),
               1,
               'base_en',
+              '',
               COALESCE(recording_cue_volume, 75),
               restore_clipboard,
               COALESCE(interaction_mode, 'hold'),
@@ -605,7 +621,8 @@ fn migrate_settings_table(connection: &Connection) -> Result<(), String> {
               save_history,
               0,
               1,
-              0
+              0,
+              'system'
             FROM settings;
             DROP TABLE settings;
             ALTER TABLE settings_next RENAME TO settings;
@@ -673,17 +690,20 @@ fn normalize_settings(settings: &mut Settings) -> bool {
     let normalized_dictionary = normalize_custom_dictionary(&settings.custom_dictionary);
     let normalized_mode = normalize_preferred_mode(&settings.preferred_mode);
     let normalized_style = normalize_typing_style(&settings.typing_style);
+    let normalized_input_device_id = settings.input_device_id.trim().to_string();
     let dictionary_changed = normalized_dictionary != settings.custom_dictionary;
     let mode_changed = normalized_mode != settings.preferred_mode;
     let style_changed = normalized_style != settings.typing_style;
+    let input_device_changed = normalized_input_device_id != settings.input_device_id;
 
-    if !dictionary_changed && !mode_changed && !style_changed {
+    if !dictionary_changed && !mode_changed && !style_changed && !input_device_changed {
         return false;
     }
 
     settings.custom_dictionary = normalized_dictionary;
     settings.preferred_mode = normalized_mode;
     settings.typing_style = normalized_style;
+    settings.input_device_id = normalized_input_device_id;
     true
 }
 
@@ -747,6 +767,7 @@ mod tests {
         settings.pause_background_audio = false;
         settings.warm_model_on_launch = false;
         settings.speech_model = SpeechModel::SmallEn;
+        settings.input_device_id = "usb-mic#0".to_string();
         settings.recording_cue_volume = 0;
         settings.typing_style = "excited".to_string();
         settings.custom_dictionary = "Rebecca => Rebekah  \nKatherine => Kathryn\t".to_string();
@@ -766,6 +787,7 @@ mod tests {
         assert!(!loaded.pause_background_audio);
         assert!(!loaded.warm_model_on_launch);
         assert_eq!(loaded.speech_model, SpeechModel::SmallEn);
+        assert_eq!(loaded.input_device_id, "usb-mic#0");
         assert_eq!(loaded.recording_cue_volume, 0);
         assert_eq!(loaded.typing_style, "excited");
         assert_eq!(

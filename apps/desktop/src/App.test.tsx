@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import type {
   DictationMode,
   HistoryMetrics,
+  InputDevice,
   ModelStatus,
   PermissionStatus,
   Settings,
@@ -20,6 +21,7 @@ const defaultSettings: Settings = {
   pauseBackgroundAudio: true,
   warmModelOnLaunch: true,
   speechModel: "base_en",
+  inputDeviceId: "",
   recordingCueVolume: 75,
   restoreClipboard: true,
   interactionMode: "hold",
@@ -49,6 +51,14 @@ const defaultModelStatus: ModelStatus = {
   error: null,
 };
 
+const defaultInputDevices: InputDevice[] = [
+  {
+    id: "Built-in Microphone#0",
+    name: "Built-in Microphone",
+    isDefault: true,
+  },
+];
+
 
 const defaultMetrics: HistoryMetrics = {
   totalSessions: 0,
@@ -64,6 +74,7 @@ function mockSuccessfulBootstrap() {
   vi.spyOn(desktop, "getSettings").mockResolvedValue(defaultSettings);
   vi.spyOn(desktop, "getPermissionStatus").mockResolvedValue(defaultPermissions);
   vi.spyOn(desktop, "getModelStatus").mockResolvedValue(defaultModelStatus);
+  vi.spyOn(desktop, "listInputDevices").mockResolvedValue(defaultInputDevices);
   vi.spyOn(desktop, "downloadModel").mockResolvedValue(undefined);
   vi.spyOn(desktop, "getHistoryMetrics").mockResolvedValue(defaultMetrics);
   vi.spyOn(desktop, "openAccessibilitySettings").mockResolvedValue(undefined);

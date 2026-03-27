@@ -41,6 +41,7 @@ pub struct Settings {
     pub pause_background_audio: bool,
     pub warm_model_on_launch: bool,
     pub speech_model: SpeechModel,
+    pub input_device_id: String,
     pub recording_cue_volume: i64,
     pub restore_clipboard: bool,
     pub interaction_mode: String,
@@ -66,6 +67,7 @@ impl Default for Settings {
             pause_background_audio: true,
             warm_model_on_launch: true,
             speech_model: SpeechModel::BaseEn,
+            input_device_id: String::new(),
             recording_cue_volume: 75,
             restore_clipboard: true,
             interaction_mode: "hold".to_string(),
@@ -153,6 +155,14 @@ pub struct RecordedAudio {
     pub audio_base64: String,
     pub duration_ms: u32,
     pub sample_rate: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct InputDevice {
+    pub id: String,
+    pub name: String,
+    pub is_default: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

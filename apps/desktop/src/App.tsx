@@ -249,6 +249,7 @@ export default function App() {
 
         {activeSection === "settings" && (
           <SettingsPanel
+            inputDevices={controller.inputDevices}
             onChange={(nextSettings) => void controller.saveSettings(nextSettings)}
             modelStatus={controller.modelStatus}
             settings={controller.settings}

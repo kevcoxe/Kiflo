@@ -15,6 +15,7 @@ import type {
   FocusedEditorContext,
   HistoryMetrics,
   HistoryRecord,
+  InputDevice,
   ModelStatus,
   NewHistoryRecord,
   PermissionStatus,
@@ -149,6 +150,10 @@ export async function openAccessibilitySettings(): Promise<void> {
 
 export async function requestMicrophoneAccess(): Promise<void> {
   return invokeDesktop("request_microphone_access");
+}
+
+export async function listInputDevices(): Promise<InputDevice[]> {
+  return invokeDesktop<InputDevice[]>("list_input_devices");
 }
 
 export async function requestAccessibilityAccess(): Promise<void> {

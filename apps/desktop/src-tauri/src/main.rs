@@ -14,7 +14,8 @@ use std::{env, fs, path::PathBuf, sync::Mutex, thread};
 use hud::{create_hud_window, hide_hud, set_hud_phase, show_hud};
 use models::{
     CleanupResponse, ClipboardSnapshot, DictationMode, FocusedEditorContext, HistoryMetrics,
-    HistoryRecord, HudPhase, HudState, ModelStatus, NewHistoryRecord, PermissionStatus,
+    HistoryRecord, HudPhase, HudState, InputDevice, ModelStatus, NewHistoryRecord,
+    PermissionStatus,
     RecordedAudio, Settings, SpeechModel, TranscriptionResponse,
 };
 use tauri::{
@@ -135,9 +136,11 @@ fn start_recording(
     state: State<'_, AppState>,
     pause_background_audio: Option<bool>,
 ) -> Result<(), String> {
+    let settings = db::get_settings(state.inner().database_path.as_path())?;
     recording::start_recording(
         &state.inner().recording,
         pause_background_audio.unwrap_or(true),
+        &settings.input_device_id,
         &app,
     )
 }
@@ -220,6 +223,11 @@ fn open_accessibility_settings() -> Result<(), String> {
 #[tauri::command]
 fn request_microphone_access() -> Result<(), String> {
     permissions::request_microphone_access()
+}
+
+#[tauri::command]
+fn list_input_devices() -> Result<Vec<InputDevice>, String> {
+    recording::list_input_devices()
 }
 
 #[tauri::command]
@@ -915,6 +923,7 @@ fn main() {
             open_microphone_settings,
             open_accessibility_settings,
             request_microphone_access,
+            list_input_devices,
             request_accessibility_access,
             get_frontmost_app,
             get_focused_editor_context,

@@ -3,6 +3,6 @@
 <plist version="1.0">
 <dict>
   <key>NSMicrophoneUsageDescription</key>
-  <string>Tator needs microphone access to record dictation audio for local transcription.</string>
+  <string>Kiflo needs microphone access to record dictation audio for local transcription.</string>
 </dict>
 </plist>

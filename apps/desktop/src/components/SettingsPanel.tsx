@@ -2,6 +2,7 @@ import type { ChangeEvent } from "react";
 import { useRef } from "react";
 import {
   DICTATION_MODES,
+  type InputDevice,
   RECORDING_INTERACTION_MODES,
   SPEECH_MODELS,
   TYPING_STYLES,
@@ -17,6 +18,7 @@ import { cn } from "@/lib/utils";
 
 interface SettingsPanelProps {
   settings: Settings;
+  inputDevices: InputDevice[];
   modelStatus: ModelStatus;
   onChange: (settings: Settings) => void;
 }
@@ -31,6 +33,7 @@ const selectClass = cn(
 
 export function SettingsPanel({
   settings,
+  inputDevices,
   modelStatus,
   onChange,
 }: SettingsPanelProps) {
@@ -123,6 +126,26 @@ export function SettingsPanel({
       </SettingsSection>
 
       <SettingsSection title="Audio">
+        <SelectSetting
+          label="Microphone"
+          description="Choose which input device Kiflo records from. Leave it on System default to follow macOS."
+        >
+          <select
+            id="input-device-select"
+            className={selectClass}
+            onChange={(event: ChangeEvent<HTMLSelectElement>) =>
+              update("inputDeviceId", event.target.value)
+            }
+            value={settings.inputDeviceId}
+          >
+            <option value="">System default</option>
+            {inputDevices.map((device) => (
+              <option key={device.id} value={device.id}>
+                {device.isDefault ? `${device.name} (default)` : device.name}
+              </option>
+            ))}
+          </select>
+        </SelectSetting>
         <ToggleSetting
           id="recording-cue"
           checked={settings.recordingCueVolume > 0}

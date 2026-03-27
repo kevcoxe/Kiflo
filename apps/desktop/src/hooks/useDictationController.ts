@@ -5,6 +5,7 @@ import type {
   FocusedEditorContext,
   HistoryMetrics,
   HistoryRecord,
+  InputDevice,
   ModelStatus,
   NewHistoryRecord,
   PermissionStatus,
@@ -30,6 +31,7 @@ import {
   getSettings,
   hideHud,
   listHistory,
+  listInputDevices,
   setHudPhase,
   registerGlobalShortcut,
   restoreClipboard,
@@ -76,6 +78,7 @@ const DEFAULT_SETTINGS: Settings = {
   pauseBackgroundAudio: true,
   warmModelOnLaunch: true,
   speechModel: "base_en",
+  inputDeviceId: "",
   recordingCueVolume: 75,
   restoreClipboard: true,
   interactionMode: "hold",
@@ -138,6 +141,7 @@ type ControllerState = {
   status: WorkflowStatus;
   settings: Settings;
   permissions: PermissionStatus;
+  inputDevices: InputDevice[];
   modelStatus: ModelStatus;
   historyMetrics: HistoryMetrics;
   mode: DictationMode;
@@ -255,6 +259,7 @@ export function useDictationController() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [permissions, setPermissions] =
     useState<PermissionStatus>(DEFAULT_PERMISSIONS);
+  const [inputDevices, setInputDevices] = useState<InputDevice[]>([]);
   const [modelStatus, setModelStatus] = useState<ModelStatus>(DEFAULT_MODEL_STATUS);
   const [mode, setMode] = useState<DictationMode>(DEFAULT_SETTINGS.preferredMode);
   const [history, setHistory] = useState<HistoryRecord[]>([]);
@@ -269,6 +274,7 @@ export function useDictationController() {
     status,
     settings,
     permissions,
+    inputDevices,
     modelStatus,
     historyMetrics,
     mode,
@@ -283,6 +289,7 @@ export function useDictationController() {
       status,
       settings,
       permissions,
+      inputDevices,
       modelStatus,
       historyMetrics,
       mode,
@@ -300,6 +307,7 @@ export function useDictationController() {
     historyMetrics,
     mode,
     permissions,
+    inputDevices,
     settings,
     status,
   ]);
@@ -349,11 +357,19 @@ export function useDictationController() {
           void refreshPermissions();
         });
 
-        const [loadedSettings, loadedPermissions, loadedHistory, loadedModelStatus, loadedMetrics] =
+        const [
+          loadedSettings,
+          loadedPermissions,
+          loadedHistory,
+          loadedInputDevices,
+          loadedModelStatus,
+          loadedMetrics,
+        ] =
           await Promise.all([
             getSettings(),
             getPermissionStatus(),
             listHistory(8),
+            listInputDevices().catch(() => []),
             getModelStatus().catch(() => DEFAULT_MODEL_STATUS),
             getHistoryMetrics().catch(() => DEFAULT_HISTORY_METRICS),
           ]);
@@ -366,6 +382,7 @@ export function useDictationController() {
           ...stateRef.current,
           settings: loadedSettings,
           permissions: loadedPermissions,
+          inputDevices: loadedInputDevices,
           modelStatus: loadedModelStatus,
           historyMetrics: loadedMetrics,
           mode: loadedSettings.preferredMode,
@@ -376,6 +393,7 @@ export function useDictationController() {
         setSettings(loadedSettings);
         setMode(loadedSettings.preferredMode);
         setPermissions(loadedPermissions);
+        setInputDevices(loadedInputDevices);
         setModelStatus(loadedModelStatus);
         setHistoryMetrics(loadedMetrics);
         setHistory(loadedHistory);
@@ -874,6 +892,7 @@ export function useDictationController() {
     status,
     settings,
     permissions,
+    inputDevices,
     modelStatus,
     historyMetrics,
     mode,

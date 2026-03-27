@@ -18,7 +18,7 @@ use tauri::{AppHandle, Emitter};
 
 use crate::hud::{HUD_METER_EVENT, HUD_WINDOW_LABEL};
 use crate::media::MediaPlaybackInterruption;
-use crate::models::{HudMeterPayload, RecordedAudio};
+use crate::models::{HudMeterPayload, InputDevice, RecordedAudio};
 
 const HUD_METER_INTERVAL: Duration = Duration::from_millis(60);
 const HUD_METER_GAIN: f64 = 6.0;
@@ -33,6 +33,7 @@ pub struct RecordingHandle {
 pub fn start_recording(
     slot: &Mutex<Option<RecordingHandle>>,
     pause_background_audio: bool,
+    input_device_id: &str,
     app: &AppHandle,
 ) -> Result<(), String> {
     let mut guard = slot
@@ -51,7 +52,8 @@ pub fn start_recording(
     let (stop_sender, stop_receiver) = mpsc::channel();
     let join_handle = thread::spawn({
         let meter_broadcaster = meter_broadcaster.clone();
-        move || record_until_stopped(stop_receiver, meter_broadcaster)
+        let input_device_id = input_device_id.to_string();
+        move || record_until_stopped(&input_device_id, stop_receiver, meter_broadcaster)
     });
 
     *guard = Some(RecordingHandle {
@@ -97,13 +99,12 @@ pub fn stop_recording(slot: &Mutex<Option<RecordingHandle>>) -> Result<RecordedA
 }
 
 fn record_until_stopped(
+    input_device_id: &str,
     stop_receiver: Receiver<()>,
     meter_broadcaster: HudMeterBroadcaster<AppHudMeterSink>,
 ) -> Result<RecordedAudio, String> {
     let host = cpal::default_host();
-    let device = host
-        .default_input_device()
-        .ok_or_else(|| "No default microphone was found.".to_string())?;
+    let device = select_input_device(&host, input_device_id)?;
     let supported_config = device
         .default_input_config()
         .map_err(|error| error.to_string())?;
@@ -181,6 +182,63 @@ fn record_until_stopped(
     })
 }
 
+pub fn list_input_devices() -> Result<Vec<InputDevice>, String> {
+    let host = cpal::default_host();
+    let default_name = host.default_input_device().and_then(|device| device.name().ok());
+    let mut occurrence_counts = std::collections::HashMap::<String, usize>::new();
+    let mut devices = Vec::new();
+
+    for device in host.input_devices().map_err(|error| error.to_string())? {
+        let name = device.name().map_err(|error| error.to_string())?;
+        let occurrence = occurrence_counts
+            .entry(name.clone())
+            .and_modify(|count| *count += 1)
+            .or_insert(0);
+        devices.push(InputDevice {
+            id: input_device_id_for_name(&name, *occurrence),
+            name: name.clone(),
+            is_default: default_name.as_deref() == Some(name.as_str()),
+        });
+    }
+
+    devices.sort_by(|left, right| left.name.cmp(&right.name).then(left.id.cmp(&right.id)));
+    Ok(devices)
+}
+
+fn select_input_device(host: &cpal::Host, requested_id: &str) -> Result<Device, String> {
+    if requested_id.is_empty() {
+        return host
+            .default_input_device()
+            .ok_or_else(|| "No default microphone was found.".to_string());
+    }
+
+    let mut occurrence_counts = std::collections::HashMap::<String, usize>::new();
+    let mut first_available = None;
+
+    for device in host.input_devices().map_err(|error| error.to_string())? {
+        let name = device.name().map_err(|error| error.to_string())?;
+        let occurrence = occurrence_counts
+            .entry(name.clone())
+            .and_modify(|count| *count += 1)
+            .or_insert(0);
+        if first_available.is_none() {
+            first_available = Some(device.clone());
+        }
+
+        if input_device_id_for_name(&name, *occurrence) == requested_id {
+            return Ok(device);
+        }
+    }
+
+    host.default_input_device()
+        .or(first_available)
+        .ok_or_else(|| "No microphone was found.".to_string())
+}
+
+fn input_device_id_for_name(name: &str, occurrence: usize) -> String {
+    format!("{name}#{occurrence}")
+}
+
 fn build_input_stream_f32(
     device: &Device,
     config: &StreamConfig,
@@ -196,7 +254,7 @@ fn build_input_stream_f32(
                 let mut sum_squares = 0.0;
                 let mut sample_count = 0;
                 for frame in data.chunks(channels) {
-                    let value = frame.first().copied().unwrap_or_default().clamp(-1.0, 1.0);
+                    let value = average_frame_f32(frame);
                     guard.push((value * i16::MAX as f32) as i16);
                     sum_squares += f64::from(value * value);
                     sample_count += 1;
@@ -227,7 +285,7 @@ fn build_input_stream_i16(
                 let mut sum_squares = 0.0;
                 let mut sample_count = 0;
                 for frame in data.chunks(channels) {
-                    let value = frame.first().copied().unwrap_or_default();
+                    let value = average_frame_i16(frame);
                     guard.push(value);
                     let normalized = f64::from(value) / f64::from(i16::MAX);
                     sum_squares += normalized * normalized;
@@ -259,8 +317,7 @@ fn build_input_stream_u16(
                 let mut sum_squares = 0.0;
                 let mut sample_count = 0;
                 for frame in data.chunks(channels) {
-                    let sample = frame.first().copied().unwrap_or_default();
-                    let signed = (sample as i32 - i16::MAX as i32 - 1) as i16;
+                    let signed = average_frame_u16(frame);
                     guard.push(signed);
                     let normalized = f64::from(signed) / f64::from(i16::MAX);
                     sum_squares += normalized * normalized;
@@ -275,6 +332,40 @@ fn build_input_stream_u16(
             None,
         )
         .map_err(|error| error.to_string())
+}
+
+fn average_frame_f32(frame: &[f32]) -> f32 {
+    if frame.is_empty() {
+        return 0.0;
+    }
+
+    let sum = frame
+        .iter()
+        .copied()
+        .map(|sample| sample.clamp(-1.0, 1.0))
+        .sum::<f32>();
+    (sum / frame.len() as f32).clamp(-1.0, 1.0)
+}
+
+fn average_frame_i16(frame: &[i16]) -> i16 {
+    if frame.is_empty() {
+        return 0;
+    }
+
+    let sum = frame.iter().map(|sample| i32::from(*sample)).sum::<i32>();
+    (sum / frame.len() as i32) as i16
+}
+
+fn average_frame_u16(frame: &[u16]) -> i16 {
+    if frame.is_empty() {
+        return 0;
+    }
+
+    let sum = frame
+        .iter()
+        .map(|sample| i32::from(*sample) - i32::from(i16::MAX) - 1)
+        .sum::<i32>();
+    (sum / frame.len() as i32) as i16
 }
 
 trait HudMeterSink: Send + Sync + 'static {
@@ -407,5 +498,18 @@ mod tests {
         broadcaster.publish_at(0.7, start + Duration::from_millis(120));
 
         assert_eq!(sink.levels(), vec![0.3]);
+    }
+
+    #[test]
+    fn input_device_id_includes_occurrence() {
+        assert_eq!(input_device_id_for_name("Built-in Microphone", 0), "Built-in Microphone#0");
+        assert_eq!(input_device_id_for_name("USB Mic", 1), "USB Mic#1");
+    }
+
+    #[test]
+    fn average_frame_uses_all_channels() {
+        assert_eq!(average_frame_f32(&[0.0, 0.5]), 0.25);
+        assert_eq!(average_frame_i16(&[0, 1000, -1000]), 0);
+        assert_eq!(average_frame_u16(&[0, u16::MAX]), 0);
     }
 }

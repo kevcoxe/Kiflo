@@ -53,6 +53,7 @@ export interface Settings {
   pauseBackgroundAudio: boolean;
   warmModelOnLaunch: boolean;
   speechModel: SpeechModel;
+  inputDeviceId: string;
   recordingCueVolume: number;
   restoreClipboard: boolean;
   interactionMode: RecordingInteractionMode;
@@ -161,4 +162,10 @@ export interface RecordedAudio {
 
 export interface ClipboardSnapshot {
   text: string | null;
+}
+
+export interface InputDevice {
+  id: string;
+  name: string;
+  isDefault: boolean;
 }
